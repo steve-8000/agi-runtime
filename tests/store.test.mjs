@@ -49,12 +49,12 @@ test('duplicate tool dispatch is rejected after success', async t => {
 });
 test('usage counters observe without capping: many calls and long elapsed time never block', async t => {
   const f = await fixture(t);
-  for (let i = 0; i < 120; i++) assert.equal(await run(f.kernel, call({ toolCallId: `e${i}` })), undefined);
+  for (let i = 0; i < 600; i++) assert.equal(await run(f.kernel, call({ toolCallId: `e${i}` })), undefined);
   for (let i = 0; i < 720; i++) { f.advance(20000); f.store.heartbeat(f.lease); }   // four hours of a live, heartbeating session
   assert.equal(await run(f.kernel, call({ toolCallId: 'late' })), undefined);
   assert.equal(await run(f.kernel, call({ toolCallId: 'r', toolName: 'grep', input: { pattern: 'x' } })), undefined);
   const c = f.kernel.context();
-  assert.equal(c.effectsUsed, 121); assert.equal(c.toolCalls, 122);
+  assert.equal(c.effectsUsed, 601); assert.equal(c.toolCalls, 602);
 });
 test('observe mode journals and counts but never blocks on reconciliation', async t => {
   const f = await fixture(t, { config: { mode: 'observe' } }); const other = await f.sibling('t2', { config: { mode: 'observe' } });

@@ -114,7 +114,7 @@ zvec에는 code/workspace 문서만. Utopia 원문을 다시 색인하지 않는
 
 1. clab-mem 서버에 idempotency receipt(`(actor, key)` 유일, payload hash 충돌 거절, durable ack) 추가 → 어댑터 바인딩 → timeout-after-commit 테스트.
 2. Kubernetes target resolver/broker (CA/server identity, GitOps repo/ref) → `structuredOperationTools` 연결.
-3. 사용량 이벤트와 goal ID 결합, provider/OS hard limit.
+3. 사용량 이벤트와 goal ID를 연결하되 관측용으로만 사용한다. Runtime은 호출 수·효과 수·세션 경과시간을 근거로 작업을 중단하지 않는다.
 4. 동일 workload A/B 측정 후 자율성 확대.
 
 각 단계는 독립적으로 검증한다. 이번 단계(extension-first 전환, 라이브 검증)가 통과했다고 다음 단계가 준비됐다고 기록하지 않는다.
