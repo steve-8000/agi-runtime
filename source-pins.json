@@ -1,0 +1,51 @@
+{
+  "reviewDate": "2026-09-05",
+  "timezone": "Asia/Seoul",
+  "sourceMethod": "raw.githubusercontent.com file reads at the release tag; not a local clone. Installed binary from Homebrew formula.",
+  "repositories": [
+    {
+      "repository": "can1357/oh-my-pi",
+      "tag": "v18.1.10",
+      "commit": "f241301c83726afe75a847e919b89977a54dafbe",
+      "license": "MIT",
+      "installedBinary": "homebrew omp 18.1.10 darwin-arm64 sha256 f93613f5cc66a22e4368e955f7d121b9508306d4153b2932318e5d45ecf13a44",
+      "filesRead": [
+        "packages/coding-agent/src/extensibility/extensions/types.ts",
+        "packages/coding-agent/src/extensibility/extensions/wrapper.ts",
+        "packages/coding-agent/src/extensibility/shared-events.ts",
+        "packages/coding-agent/src/tools/approval.ts",
+        "packages/coding-agent/src/index.ts"
+      ],
+      "corePatch": "none"
+    },
+    {
+      "repository": "zvec-ai/zvec-grep",
+      "commit": "52653951b24617762f4ab0c71c34d594e5001617",
+      "license": "Apache-2.0",
+      "corePatch": "none"
+    },
+    {
+      "repository": "deeplethe/utopia",
+      "commit": "05492969662de90efb6dc8c69fbb8d282142a738",
+      "license": "Apache-2.0",
+      "corePatch": "none"
+    },
+    {
+      "repository": "local checkout of clab-one/clab-mem",
+      "file": "mcp/server.ts",
+      "note": "tool names and read/write semantics for memoryReadTools"
+    }
+  ],
+  "inputs": {
+    "config.yml": "768a92f563edc48480bef11fa345a61bbf1e39a96832b3b602c4d0ba02047605",
+    "AGENTS.md": "cfea0a24622987f5cf76423f9db9d063edd3729cae9953426a8e113340dc2c9a"
+  },
+  "validation": {
+    "node": "v26.7.0",
+    "tsc": "5.9.3",
+    "bun": "1.3.14 (system); OMP binary embeds its own",
+    "liveOmp": "18.1.10 via -e and via auto-discovery (scripts/compat.mjs --live)",
+    "remoteMemory": "not contacted (connection failure this session; transport unbound by design)",
+    "deployment": "installed to ~/.omp/agent/extensions/agi-runtime"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "mode": "enforce",
+  "maxEffects": 100,
+  "maxToolCalls": 500,
+  "maxWallMs": 3600000,
+  "blockOnUnknown": true,
+  "headlessEffects": "allow",
+  "requireApproval": [],
+  "memoryReadTools": [
+    "mcp__clab_mem_mem_search",
+    "mcp__clab_mem_mem_read",
+    "mcp__clab_mem_mem_status",
+    "mcp__clab_mem_mem_task_lookup",
+    "mcp__clab_mem_mem_task_read"
+  ],
+  "structuredOperationTools": [],
+  "targets": {}
+}

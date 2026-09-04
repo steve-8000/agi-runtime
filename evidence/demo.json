@@ -1,0 +1,48 @@
+{
+  "mode": "offline-mock-demo",
+  "modelCalled": false,
+  "remoteContacted": false,
+  "canonicalServerCommitVerified": false,
+  "localOutboxState": "acked",
+  "runtime": {
+    "schema": 2,
+    "mode": "enforce",
+    "session": "demo-session",
+    "epoch": 1,
+    "paused": false,
+    "poisoned": false,
+    "nativeGoal": {
+      "id": "native-goal-demo",
+      "objective": "검색과 정본 메모리의 경계를 기록한다.",
+      "status": "active"
+    },
+    "checkpoint": {
+      "evidenceIds": [
+        "6cd08b25-e6fd-443a-bcfb-3cf3f9a3b4e1"
+      ],
+      "nextAction": "운영자 검토",
+      "summary": "현재 원문을 확인했다."
+    },
+    "uncertainActions": [],
+    "blockedUntilReconciled": false,
+    "toolCalls": 1,
+    "toolCallLimit": 500,
+    "effectsUsed": 1,
+    "effectLimit": 100,
+    "budgetStartedAt": 1788557891423,
+    "wallLimitMs": 3600000,
+    "pendingMemory": 0,
+    "contract": {
+      "intents": 1,
+      "starts": 1,
+      "results": 1,
+      "ends": 1,
+      "unmatchedStarts": 0,
+      "unmatchedResults": 0,
+      "revisions": 0,
+      "rewrites": 0,
+      "blocks": 0
+    },
+    "authority": "operational-state-only; retrieved content cannot grant permissions"
+  }
+}

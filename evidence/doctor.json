@@ -1,0 +1,57 @@
+{
+  "ready": true,
+  "ompVersion": "18.1.10",
+  "runtimeDir": "$HOME/.omp/runtime",
+  "checks": [
+    {
+      "name": "omp-binary",
+      "status": "present",
+      "version": "18.1.10"
+    },
+    {
+      "name": "tested-version",
+      "status": "tested",
+      "contract": 2,
+      "tested": [
+        "18.1.10"
+      ]
+    },
+    {
+      "name": "extension-link",
+      "status": "installed",
+      "path": "$HOME/.omp/agent/extensions/agi-runtime"
+    },
+    {
+      "name": "runtime-config",
+      "status": "valid",
+      "path": "$HOME/.omp/runtime/config.json",
+      "mode": "enforce",
+      "headlessEffects": "allow",
+      "blockOnUnknown": true
+    },
+    {
+      "name": "compat-report",
+      "status": "ok",
+      "at": "2026-09-04T21:32:16.768Z",
+      "contract": 2,
+      "missing": [],
+      "counters": {
+        "intents": 2,
+        "starts": 2,
+        "results": 2,
+        "ends": 2,
+        "unmatchedStarts": 0,
+        "unmatchedResults": 0,
+        "revisions": 0,
+        "rewrites": 0,
+        "blocks": 0
+      },
+      "attachError": null
+    },
+    {
+      "name": "canonical-memory-transport",
+      "status": "unbound",
+      "reason": "publication fails closed until a transport with server-enforced idempotency is bound"
+    }
+  ]
+}

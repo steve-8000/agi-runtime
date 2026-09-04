@@ -1,0 +1,310 @@
+import { mkdirSync, chmodSync, lstatSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { openDatabase } from './sqlite.mjs';
+import { check, digest, id, stable, boundedText, rejectObviousSecrets } from './util.mjs';
+
+const MEMORY_KINDS = ['decision', 'constraint', 'incident', 'procedure', 'checkpoint'];
+const OUTBOX_TRANSITIONS = {
+  candidate: ['approved', 'rejected'], approved: ['sending', 'rejected'],
+  sending: ['acked', 'unknown'], unknown: ['acked', 'rejected']
+};
+
+/**
+ * Operational journal for one workspace. Several OMP sessions may share a working tree
+ * (parallel terminals, resume), so the writer lease is per session and only the two facts
+ * that concern the shared tree are workspace-wide: `paused` and unresolved `unknown` effects.
+ */
+export class RuntimeStore {
+  static async open(path, { now = Date.now } = {}) {
+    if (path !== ':memory:') {
+      path = resolve(path);
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      // Follow directory links once (macOS puts $TMPDIR under /var → /private/var); the journal file itself may not be a link.
+      path = join(realpathSync(dirname(path)), basename(path));
+      try { check(!lstatSync(path).isSymbolicLink(), 'SYMLINK_STATE_FILE'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    const db = await openDatabase(path);
+    if (path !== ':memory:') chmodSync(path, 0o600);
+    return new RuntimeStore(db, now);
+  }
+  constructor(db, now) {
+    this.db = db; this.now = now;
+    db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+    const version = db.prepare('PRAGMA user_version').get().user_version;
+    check(version === 0 || version === 2, 'UNSUPPORTED_SCHEMA');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY, root TEXT UNIQUE NOT NULL, paused INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id),
+        epoch INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL DEFAULT 0, has_ui INTEGER NOT NULL DEFAULT 1,
+        native_goal TEXT, checkpoint TEXT, effects_used INTEGER NOT NULL DEFAULT 0, tool_calls INTEGER NOT NULL DEFAULT 0,
+        started INTEGER NOT NULL, updated INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS actions (
+        id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
+        epoch INTEGER NOT NULL, tool TEXT NOT NULL, input_hash TEXT NOT NULL, is_effect INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('executing','succeeded','failed','unknown','reconciled')),
+        outcome_hash TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL,
+        kind TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS evidence (
+        id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id),
+        record TEXT NOT NULL, created INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS outbox (
+        id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
+        payload TEXT NOT NULL, payload_hash TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('candidate','approved','sending','acked','unknown','rejected')),
+        remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY, workspace TEXT NOT NULL, session TEXT NOT NULL, epoch INTEGER NOT NULL,
+        action_hash TEXT NOT NULL, expires INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS pending_actions ON actions(workspace,state);
+      CREATE INDEX IF NOT EXISTS session_actions ON actions(session,state);
+      PRAGMA user_version=2;
+    `);
+  }
+  transaction(fn) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try { const result = fn(); check(!(result instanceof Promise), 'ASYNC_TRANSACTION'); this.db.exec('COMMIT'); return result; }
+    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  emit(workspace, kind, payload) {
+    this.db.prepare('INSERT INTO events(workspace,kind,payload,at) VALUES(?,?,?,?)')
+      .run(workspace, kind, stable(payload), this.now());
+  }
+  events(workspace, { after = 0, limit = 100 } = {}) {
+    return this.db.prepare('SELECT seq,kind,payload,at FROM events WHERE workspace=? AND seq>? ORDER BY seq LIMIT ?')
+      .all(workspace, after, limit).map(row => ({ ...row, payload: JSON.parse(row.payload) }));
+  }
+  workspace(root) {
+    root = realpathSync(root);
+    const workspace = digest({ root });
+    this.db.prepare('INSERT OR IGNORE INTO workspaces(id,root) VALUES(?,?)').run(workspace, root);
+    return { id: workspace, root };
+  }
+  /** Executing work owned by sessions whose lease lapsed can no longer report an outcome. */
+  sweep(workspace) {
+    const expired = 'SELECT id FROM sessions WHERE workspace=? AND expires<=?';
+    const now = this.now();
+    this.db.prepare(`UPDATE actions SET state='unknown',updated=? WHERE workspace=? AND state='executing' AND is_effect=1 AND session IN (${expired})`).run(now, workspace, workspace, now);
+    this.db.prepare(`UPDATE actions SET state='failed',updated=? WHERE workspace=? AND state='executing' AND is_effect=0 AND session IN (${expired})`).run(now, workspace, workspace, now);
+    // An interrupted remote write is neither confirmed nor refuted until read back.
+    this.db.prepare(`UPDATE outbox SET state='unknown',updated=? WHERE workspace=? AND state='sending' AND session IN (${expired})`).run(now, workspace, workspace, now);
+  }
+  acquire(workspace, session, { ttl = 30000, hasUI = true } = {}) {
+    check(typeof session === 'string' && session.length > 0, 'INVALID_SESSION');
+    check(Number.isSafeInteger(ttl) && ttl >= 1000, 'INVALID_TTL');
+    return this.transaction(() => {
+      check(this.db.prepare('SELECT 1 FROM workspaces WHERE id=?').get(workspace), 'NO_WORKSPACE');
+      const row = this.db.prepare('SELECT workspace,epoch,expires,started FROM sessions WHERE id=?').get(session);
+      check(!row || row.workspace === workspace, 'SESSION_WORKSPACE_MISMATCH');
+      // The same session resumed in two processes at once would double-count and race the journal.
+      check(!row || row.expires <= this.now(), 'SESSION_WRITER_BUSY');
+      this.sweep(workspace);
+      const epoch = (row?.epoch ?? 0) + 1;
+      const now = this.now();
+      // Budgets survive resume on purpose: reopening a session is not a new allowance.
+      this.db.prepare(`INSERT INTO sessions(id,workspace,epoch,expires,has_ui,started,updated) VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET epoch=excluded.epoch,expires=excluded.expires,has_ui=excluded.has_ui,updated=excluded.updated`)
+        .run(session, workspace, epoch, now + ttl, hasUI ? 1 : 0, now, now);
+      this.emit(workspace, 'writer.acquired', { session, epoch, hasUI });
+      return { workspace, session, epoch, ttl };
+    });
+  }
+  assertLease(lease) {
+    const row = this.db.prepare('SELECT workspace,epoch,expires FROM sessions WHERE id=?').get(lease.session);
+    check(row && row.workspace === lease.workspace && row.epoch === lease.epoch && row.expires > this.now(), 'FENCED_WRITER');
+  }
+  heartbeat(lease) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      this.db.prepare('UPDATE sessions SET expires=? WHERE id=?').run(this.now() + lease.ttl, lease.session);
+    });
+  }
+  release(lease) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      this.db.prepare('UPDATE sessions SET expires=0,updated=? WHERE id=?').run(this.now(), lease.session);
+      this.emit(lease.workspace, 'writer.released', { session: lease.session, epoch: lease.epoch });
+    });
+  }
+  setPaused(lease, paused) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      this.db.prepare('UPDATE workspaces SET paused=? WHERE id=?').run(paused ? 1 : 0, lease.workspace);
+      this.emit(lease.workspace, paused ? 'runtime.paused' : 'runtime.resumed', { session: lease.session });
+    });
+  }
+  isPaused(workspace) {
+    return this.db.prepare('SELECT paused FROM workspaces WHERE id=?').get(workspace)?.paused === 1;
+  }
+  sessionRow(session) {
+    return this.db.prepare('SELECT native_goal,checkpoint,effects_used,tool_calls,started,has_ui FROM sessions WHERE id=?').get(session);
+  }
+  mirrorGoal(lease, goal) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      // A mirror only. OMP's GoalRuntime remains authoritative.
+      this.db.prepare('UPDATE sessions SET native_goal=?,updated=? WHERE id=?').run(goal === null ? null : stable(goal), this.now(), lease.session);
+      this.emit(lease.workspace, 'goal.observed', { session: lease.session, goalId: goal?.id ?? null, status: goal?.status ?? null });
+    });
+  }
+  checkpoint(lease, record) {
+    rejectObviousSecrets(record); boundedText(stable(record), 12000);
+    this.transaction(() => {
+      this.assertLease(lease);
+      this.db.prepare('UPDATE sessions SET checkpoint=?,updated=? WHERE id=?').run(stable(record), this.now(), lease.session);
+      this.emit(lease.workspace, 'checkpoint.saved', { session: lease.session, hash: digest(record) });
+    });
+  }
+  /**
+   * Record intent before the tool runs. `limits` present → budget and reconciliation are enforced
+   * inside the same transaction, so two concurrent calls cannot both take the last unit.
+   */
+  beginAction(lease, { actionId, tool, input, isEffect = true, limits }) {
+    // The sweep commits on its own: a refused reservation must not roll back the discovery of lapsed work.
+    if (isEffect) this.transaction(() => this.sweep(lease.workspace));
+    return this.transaction(() => {
+      this.assertLease(lease);
+      // Returning a prior success is unsafe for arbitrary tools. All repeated dispatches are rejected.
+      check(!this.db.prepare('SELECT 1 FROM actions WHERE id=?').get(actionId), 'DUPLICATE_ACTION');
+      const session = this.db.prepare('SELECT effects_used,tool_calls,started FROM sessions WHERE id=?').get(lease.session);
+      if (limits) {
+        check(session.tool_calls < limits.maxToolCalls, 'TOOL_BUDGET_EXHAUSTED');
+        check(this.now() - session.started < limits.maxWallMs, 'WALL_BUDGET_EXHAUSTED');
+        if (isEffect) {
+          check(!limits.blockOnUnknown || this.unknownActions(lease.workspace).length === 0, 'RECONCILIATION_REQUIRED');
+          check(session.effects_used < limits.maxEffects, 'EFFECT_BUDGET_EXHAUSTED');
+        }
+      }
+      this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(isEffect ? 1 : 0, this.now(), lease.session);
+      const inputHash = digest(input);
+      this.db.prepare('INSERT INTO actions(id,workspace,session,epoch,tool,input_hash,is_effect,state,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(actionId, lease.workspace, lease.session, lease.epoch, tool, inputHash, isEffect ? 1 : 0, 'executing', this.now(), this.now());
+      this.emit(lease.workspace, 'action.started', { actionId, session: lease.session, tool, inputHash, isEffect, epoch: lease.epoch });
+      return actionId;
+    });
+  }
+  action(actionId) {
+    return this.db.prepare('SELECT id,workspace,session,epoch,tool,input_hash,is_effect,state,outcome_hash FROM actions WHERE id=?').get(actionId);
+  }
+  /** Another extension revised the input after our intent was recorded; the executed input is the truth. */
+  reviseAction(lease, actionId, input) {
+    return this.transaction(() => {
+      this.assertLease(lease);
+      const row = this.action(actionId);
+      check(row && row.session === lease.session && row.epoch === lease.epoch && row.state === 'executing', 'ACTION_STATE_CONFLICT');
+      const inputHash = digest(input);
+      if (inputHash === row.input_hash) return false;
+      this.db.prepare('UPDATE actions SET input_hash=?,updated=? WHERE id=?').run(inputHash, this.now(), actionId);
+      this.emit(lease.workspace, 'action.revised', { actionId, from: row.input_hash, to: inputHash });
+      return true;
+    });
+  }
+  finishAction(lease, actionId, { ok, outcome }) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      const row = this.action(actionId);
+      check(row && row.session === lease.session && row.epoch === lease.epoch && row.state === 'executing', 'ACTION_STATE_CONFLICT');
+      const outcomeHash = digest(outcome ?? null);
+      this.db.prepare('UPDATE actions SET state=?,outcome_hash=?,updated=? WHERE id=?')
+        .run(ok ? 'succeeded' : 'failed', outcomeHash, this.now(), actionId);
+      this.emit(lease.workspace, 'action.finished', { actionId, ok, outcomeHash });
+    });
+  }
+  renewBudget(lease) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      check(this.unknownActions(lease.workspace).length === 0, 'RECONCILIATION_REQUIRED');
+      this.db.prepare('UPDATE sessions SET effects_used=0,tool_calls=0,started=?,updated=? WHERE id=?').run(this.now(), this.now(), lease.session);
+      this.emit(lease.workspace, 'budget.renewed', { session: lease.session });
+    });
+  }
+  unknownActions(workspace) {
+    return this.db.prepare("SELECT id,tool,input_hash,session,updated FROM actions WHERE workspace=? AND state='unknown' ORDER BY updated").all(workspace);
+  }
+  /** Human attestation that the real target state was checked. Evidence receipts are optional support. */
+  reconcile(lease, actionId, evidenceIds = []) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      if (evidenceIds.length) this.assertEvidence(lease.workspace, evidenceIds);
+      const row = this.action(actionId);
+      check(row?.workspace === lease.workspace && row.state === 'unknown', 'ACTION_STATE_CONFLICT');
+      this.db.prepare("UPDATE actions SET state='reconciled',updated=? WHERE id=?").run(this.now(), actionId);
+      this.emit(lease.workspace, 'action.reconciled', { actionId, by: lease.session, evidenceIds });
+    });
+  }
+  saveEvidence(lease, record) {
+    return this.transaction(() => {
+      this.assertLease(lease);
+      const evidenceId = id();
+      this.db.prepare('INSERT INTO evidence(id,workspace,record,created) VALUES(?,?,?,?)').run(evidenceId, lease.workspace, stable(record), this.now());
+      return evidenceId;
+    });
+  }
+  evidence(evidenceId) {
+    const row = this.db.prepare('SELECT workspace,record FROM evidence WHERE id=?').get(evidenceId);
+    return row ? { workspace: row.workspace, record: JSON.parse(row.record) } : undefined;
+  }
+  assertEvidence(workspace, evidenceIds) {
+    check(Array.isArray(evidenceIds) && evidenceIds.length > 0, 'EVIDENCE_REQUIRED');
+    for (const evidenceId of evidenceIds) check(this.evidence(evidenceId)?.workspace === workspace, 'EVIDENCE_SCOPE_MISMATCH');
+  }
+  candidate(lease, payload) {
+    rejectObviousSecrets(payload); boundedText(stable(payload), 16000);
+    check(MEMORY_KINDS.includes(payload.kind), 'INVALID_MEMORY_KIND');
+    boundedText(payload.title, 200); boundedText(payload.content, 10000);
+    return this.transaction(() => {
+      this.assertLease(lease); this.assertEvidence(lease.workspace, payload.evidenceIds);
+      const candidateId = id();
+      this.db.prepare('INSERT INTO outbox(id,workspace,session,payload,payload_hash,state,created,updated) VALUES(?,?,?,?,?,?,?,?)')
+        .run(candidateId, lease.workspace, lease.session, stable(payload), digest(payload), 'candidate', this.now(), this.now());
+      this.emit(lease.workspace, 'memory.candidate', { candidateId, payloadHash: digest(payload) });
+      return candidateId;
+    });
+  }
+  setOutbox(lease, candidateId, from, to, remoteId = null) {
+    check(OUTBOX_TRANSITIONS[from]?.includes(to), 'OUTBOX_TRANSITION_INVALID');
+    if (to === 'acked') boundedText(remoteId, 1024);
+    this.transaction(() => {
+      this.assertLease(lease);
+      const row = this.outbox(candidateId);
+      check(row?.workspace === lease.workspace && row.state === from, 'OUTBOX_STATE_CONFLICT');
+      // The sending session owns the in-flight write so a lapse of its lease can be swept.
+      this.db.prepare('UPDATE outbox SET state=?,remote_id=?,session=?,updated=? WHERE id=?').run(to, remoteId, lease.session, this.now(), candidateId);
+      this.emit(lease.workspace, `memory.${to}`, { candidateId, remoteId });
+    });
+  }
+  outbox(candidateId) { return this.db.prepare('SELECT * FROM outbox WHERE id=?').get(candidateId); }
+  pendingOutbox(workspace) {
+    return this.db.prepare("SELECT id,state,payload_hash,updated FROM outbox WHERE workspace=? AND state IN ('candidate','approved','unknown') ORDER BY created").all(workspace);
+  }
+  approve(lease, actionHash, ttl = 60000) {
+    check(Number.isSafeInteger(ttl) && ttl > 0 && ttl <= 300000, 'INVALID_APPROVAL_TTL');
+    return this.transaction(() => {
+      this.assertLease(lease); const approvalId = id();
+      this.db.prepare('INSERT INTO approvals(id,workspace,session,epoch,action_hash,expires) VALUES(?,?,?,?,?,?)')
+        .run(approvalId, lease.workspace, lease.session, lease.epoch, actionHash, this.now() + ttl);
+      this.emit(lease.workspace, 'action.approved', { approvalId, actionHash, session: lease.session, epoch: lease.epoch });
+      return approvalId;
+    });
+  }
+  consumeApproval(lease, approvalId, actionHash) {
+    this.transaction(() => {
+      this.assertLease(lease);
+      const row = this.db.prepare('SELECT * FROM approvals WHERE id=?').get(approvalId);
+      check(row && row.session === lease.session && row.epoch === lease.epoch && !row.consumed && row.expires > this.now() && row.action_hash === actionHash, 'INVALID_APPROVAL');
+      this.db.prepare('UPDATE approvals SET consumed=1 WHERE id=?').run(approvalId);
+    });
+  }
+  close() { this.db.close(); }
+}
