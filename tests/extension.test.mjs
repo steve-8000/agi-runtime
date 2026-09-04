@@ -48,6 +48,7 @@ test('loads with the tested contract, journals a full tool cycle, and reports co
     [{ tool: 'read', is_effect: 0, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'failed' }]);
   const state = JSON.parse(h.handlers.get('before_agent_start')({}, h.ctx).message.content);
   assert.deepEqual(state.usage, { toolCalls: 3, effects: 2 }); assert.equal(state.blockedUntilReconciled, false);
+  assert.equal(state.search.semanticDiscovery, 'mcp__zvec_grep_search');
 });
 test('runtime tools chain evidence into checkpoint and memory candidate without remote writes', async t => {
   const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);

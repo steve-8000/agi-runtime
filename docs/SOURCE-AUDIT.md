@@ -32,7 +32,7 @@
 
 ## zvec-grep
 
-`~/.omp/agent/mcp.json`: 서버 `zvec-grep` = `zg server --stdio`. 도구 이름 `mcp__zvec_grep_search`. MCP 서버 지침(시스템 프롬프트): `query/queries/fts/vector`, `fuse`, 절대 `root`, index 생성은 사용자 승인 필요. 커널은 입력을 **수정**한다(limit≤10, autoUpdate:false, hidden/noIgnore/follow 제거). 다른 root는 허용하되 `search.foreign_root` 이벤트로 남긴다 — `--add-dir` 같은 정당한 다중 root가 있다. 이전 pin(`52653951`) 검토 내용은 유지된다.
+`~/.omp/agent/mcp.json`: 서버 `zvec-grep` = `zg server --stdio`. 도구 이름 `mcp__zvec_grep_search`. MCP 서버 지침(시스템 프롬프트): `query/queries/fts/vector`, `fuse`, 절대 `root`, index 생성은 사용자 승인 필요. 커널은 입력을 **수정하지 않는다** — `limit`, `autoUpdate`, `hidden/noIgnore/follow`, query group 수, `root`(`--add-dir` 같은 정당한 다중 root 포함)는 모두 모델이 보낸 그대로 실행되고 `READ_TOOLS`의 read로 저널에만 남는다. freshness·update·query semantics는 zvec 서버 지침이 담당한다. 이전 pin(`52653951`) 검토 내용은 유지된다.
 
 ## 첨부 설정 검토
 

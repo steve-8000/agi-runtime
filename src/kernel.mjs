@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
-import { check, digest, stable, RuntimeFault } from './util.mjs';
+import { check, digest, RuntimeFault } from './util.mjs';
 import { runtimeConfig } from './config.mjs';
-import { classify, decision, approvalHash, isEffect, ZVEC_TOOL } from './policy.mjs';
+import { classify, decision, approvalHash, isEffect } from './policy.mjs';
 import { sensitiveRead } from './workspace-write.mjs';
 
 const SETTLED_RETENTION_MS = 60000;
@@ -45,7 +45,7 @@ export class RuntimeKernel {
     return { block: true, reason };
   }
 
-  /** Returns a tool_call result: `{block, reason}`, `{input}` for a bounded search revision, or undefined. */
+  /** Returns a tool_call result: `{block, reason}` or undefined. The runtime never rewrites a tool's input. */
   async intent(call) {
     this.counters.intents++; this.prune();
     const { toolCallId, toolName, input } = call;
@@ -59,8 +59,6 @@ export class RuntimeKernel {
       check(policy.allow, policy.reason ?? 'DENIED');
       const effect = isEffect(op);
       if (effect) check(!this.paused, 'RUNTIME_PAUSED', '/runtime resume 후 계속하십시오');
-      let revised;
-      if (toolName === ZVEC_TOOL) revised = this.boundedSearch(input);
       if (toolName === 'read' && sensitiveRead(this.root, input?.path)) this.store.emit(this.lease.workspace, 'read.sensitive', { toolCallId, path: input.path });
       if (policy.requiresApproval) {
         check(call.hasUI && typeof this.confirm === 'function', 'INTERACTIVE_APPROVAL_REQUIRED');
@@ -73,25 +71,13 @@ export class RuntimeKernel {
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
       const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
-      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input: revised ?? input, isEffect: effect, blockOnUnknown }));
-      this.pending.set(key, { actionId, toolName, isEffect: effect, inputHash: digest(revised ?? input), settledAt: 0, isError: undefined });
-      return revised ? { input: revised } : undefined;
+      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown }));
+      this.pending.set(key, { actionId, toolName, isEffect: effect, inputHash: digest(input), settledAt: 0, isError: undefined });
+      return undefined;
     } catch (error) {
       if (error instanceof RuntimeFault) return this.block(key, `${error.code}: ${error.message}`);
       throw error;
     }
-  }
-  /** Bounded workspace search: clamp and strip scope expansion instead of failing the model's call. */
-  boundedSearch(input) {
-    check(input && typeof input === 'object', 'INVALID_SEARCH_INPUT');
-    for (const key of ['queries', 'fts', 'vector']) check(!Array.isArray(input[key]) || input[key].length <= 3, 'TOO_MANY_QUERY_GROUPS');
-    const revised = { ...input, autoUpdate: false };
-    revised.limit = Number.isInteger(input.limit) && input.limit >= 1 ? Math.min(input.limit, 10) : 5;
-    for (const key of ['hidden', 'noIgnore', 'follow']) delete revised[key];
-    try {
-      if (typeof input.root === 'string' && realpathSync(input.root) !== this.root) this.store.emit(this.lease.workspace, 'search.foreign_root', { root: input.root });
-    } catch { /* an unreadable root is the daemon's error to report */ }
-    return stable(revised) === stable(input) ? undefined : revised;
   }
   /** tool_execution_start: the args that run may differ from the tool_call snapshot when another handler revised them. */
   revise(toolCallId, toolName, args) {

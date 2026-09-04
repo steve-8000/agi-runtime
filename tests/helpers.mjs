@@ -44,7 +44,7 @@ export function call(overrides = {}) {
 export async function run(kernel, c, { isError = false, exitCode = 0, args } = {}) {
   const intent = await kernel.intent(c);
   if (intent?.block) return intent;
-  kernel.revise(c.toolCallId, c.toolName, args ?? intent?.input ?? c.input);
+  kernel.revise(c.toolCallId, c.toolName, args ?? c.input);
   const result = { content: [{ type: 'text', text: 'ok' }], details: { exitCode } };
   kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'result' });
   kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'end' });

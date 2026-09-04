@@ -14,13 +14,15 @@
              ┌────────┼─────────┬──────────┐
              │        │         │          │
         journal    evidence   zvec      memory
-      (~/.omp/    (hash 영수증) (입력 경계)  outbox
+      (~/.omp/    (hash 영수증) (read 관측)  outbox
        runtime)                            │
                                            ▼  (미바인딩)
                                     Utopia / clab-mem  = 정본
 ```
 
-역할 분리는 유지한다: `OMP = reasoning + action`, `zvec-grep = workspace retrieval`, `Utopia = canonical knowledge`. 이 계층은 네 번째 에이전트 프레임워크가 아니라 실행의 유효성을 제한하고 결과를 기록하는 얇은 층이다. 별도 모델 루프, 스케줄러, 벡터 DB, 웹 서비스는 없다.
+역할 분리는 유지한다: `OMP = reasoning + action + search routing`, `zvec-grep = workspace retrieval`, `Utopia = canonical knowledge`. 이 계층은 네 번째 에이전트 프레임워크가 아니라 실행의 유효성을 제한하고 결과를 기록하는 얇은 층이다. 별도 모델 루프, 스케줄러, 벡터 DB, 웹 서비스는 없다.
+
+검색을 잘하는 책임은 OMP와 zvec에 둔다. 에이전트는 위치를 모르는 의미·행동·구조·cross-file 질문에 zvec를 먼저 쓰고, 정확한 식별자·전수 occurrence는 native(`grep`/`rg`/LSP/`ast_grep`)로 찾고, 중요한 zvec hit는 현재 소스로 확인한 뒤 결정한다. 이 계층은 그 라우팅을 `before_agent_start` 상태의 `search` 키 한 줄로 전달할 뿐, zvec 호출의 입력(`limit`, `autoUpdate`, `hidden`, query group 수)을 바꾸거나 검색 전략을 결정하지 않는다. 이전 버전의 `boundedSearch`(입력 clamp·scope 키 제거·`search.foreign_root` 이벤트)는 이 이유로 제거했다 — 인덱스 freshness와 query semantics는 zvec 자신의 책임이다.
 
 이전 설계의 `withRuntimeBoundary` core patch는 폐기했다. 이유는 두 가지다. (1) 사용자의 OMP는 컴파일된 바이너리라 소스 패치가 실행 경로에 도달하지 않는다. (2) v18.1.10 소스를 읽은 결과 공개 이벤트 네 개가 그 패치가 얻으려던 정보를 모두 제공한다(§3).
 
@@ -81,7 +83,7 @@ events, evidence, outbox(+session), approvals(+session)
 
 ## 5. 정책
 
-분류는 **정확한 도구 이름 표**다. 확장은 OMP의 승인 tier를 볼 수 없고(`ToolInfo`에 없음), 이름 표는 안전한 쪽으로 실패한다 — 모르는 도구는 효과다. `read/grep/glob/ast_grep/web_search`와 runtime 읽기 도구 = read. `todo/goal/ask`와 runtime 세션 도구 = session-write(효과 아님). `write`는 literal `{path,content}`이고 tree 안·비민감·symlink 없음·비실행이면 `workspace-write`, `edit/ast_edit`는 path 기준. 그 외 = opaque. `mcp__zvec_grep_search` = read(workspace-index). `memoryReadTools`의 정확한 이름 = read(canonical-memory).
+분류는 **정확한 도구 이름 표**다. 확장은 OMP의 승인 tier를 볼 수 없고(`ToolInfo`에 없음), 이름 표는 안전한 쪽으로 실패한다 — 모르는 도구는 효과다. `read/grep/glob/ast_grep/web_search/mcp__zvec_grep_search`와 runtime 읽기 도구 = read. `todo/goal/ask`와 runtime 세션 도구 = session-write(효과 아님). `write`는 literal `{path,content}`이고 tree 안·비민감·symlink 없음·비실행이면 `workspace-write`, `edit/ast_edit`는 path 기준. 그 외 = opaque. `memoryReadTools`의 정확한 이름 = read(canonical-memory). read는 입력이 그대로 실행되고, 실패(`isError`)나 lapse는 `failed`로 마감된다 — unknown도 poison도 아니므로 zvec 장애는 native 검색으로의 fallback을 막지 않는다.
 
 결정: read/session-write는 항상 허용. 효과는 `headlessEffects`, 구조화 infra 정책(§5.1), `requireApproval`을 거친다. **OMP 자체의 approval mode와 `kubernetes-approval.ts`가 이미 프롬프트를 담당한다**; 이 계층은 운영자가 명시한 도구에만 정확 입력·1회용 승인을 더한다. 이전 버전의 "모든 opaque exec에 승인"은 사용자의 `yolo` 선택과 충돌하므로 상시 계층의 기본에서 뺐다.
 
@@ -93,7 +95,7 @@ events, evidence, outbox(+session), approvals(+session)
 
 ## 6. 메모리
 
-zvec에는 code/workspace 문서만. Utopia 원문을 다시 색인하지 않는다. 검색 결과는 `runtime_evidence`로 원문 hash를 남긴 뒤에만 후보의 근거가 된다.
+zvec에는 code/workspace 문서만. Utopia 원문을 다시 색인하지 않는다. 검색 결과는 evidence이지 truth가 아니다 — `runtime_evidence`로 현재 원문 hash를 남긴 뒤에만 후보의 근거가 된다.
 
 후보는 `decision/constraint/incident/procedure/checkpoint`만. 모델은 후보를 만들 뿐이고 게시는 `/runtime publish`(사람)다. 게시 전 근거 재검증, payload hash 고정, validator가 payload를 바꾸면 거절.
 

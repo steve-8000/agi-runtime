@@ -104,9 +104,11 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", () => {
 		if (!kernel) return;
 		const c = kernel.context();
-		// Compact operational facts for the model. Not instructions, not permissions.
+		// Compact operational facts for the model. Not permissions. `search` is the one routing hint this layer
+		// carries: zvec-grep discovers, native tools verify; the runtime itself never touches a search's input.
 		const state = { runtime: "agi-runtime", mode: c.mode, paused: c.paused, uncertainActions: c.uncertainActions.length, blockedUntilReconciled: c.blockedUntilReconciled,
-			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory };
+			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory,
+			search: { semanticDiscovery: "mcp__zvec_grep_search", exactAndExhaustive: "native grep/rg/lsp", authority: "current source, not index excerpts" } };
 		return { message: { customType: "agi-runtime-state", content: JSON.stringify(state), display: false } };
 	});
 

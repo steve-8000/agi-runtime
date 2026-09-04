@@ -44,15 +44,3 @@ export function verifyEvidence(root, record) {
     return current.fileHash === record.fileHash && current.excerptHash === record.excerptHash;
   } catch { return false; }
 }
-export function zvecRequest(root, query, { limit = 5, waitForFresh = false } = {}) {
-  check(typeof query === 'string' && query.trim() && query.length <= 4000, 'INVALID_QUERY');
-  check(Number.isInteger(limit) && limit >= 1 && limit <= 10, 'INVALID_LIMIT');
-  return {
-    root: realpathSync(root), query: query.trim(), limit,
-    freshness: waitForFresh ? 'wait_for_fresh' : 'eventual', autoUpdate: false
-  };
-}
-export function zvecFreshness(text) {
-  const match = /^freshness:\s*(fresh|possibly_stale)\s*$/m.exec(text);
-  return match?.[1] ?? 'unknown';
-}

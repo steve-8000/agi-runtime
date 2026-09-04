@@ -3,10 +3,11 @@ import { check, digest } from './util.mjs';
 
 // Classification is by exact tool name. OMP's approval tier is not visible to extensions, and a
 // name table fails safe: any tool this runtime does not know is an opaque effect.
-const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'runtime_status', 'runtime_evidence']);
+// zvec-grep is the workspace's semantic search; to this runtime it is one more read. Its query
+// semantics (limit, freshness, scope) belong to OMP and zvec, never to this table.
+const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'mcp__zvec_grep_search', 'runtime_status', 'runtime_evidence']);
 const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'runtime_checkpoint', 'runtime_memory_candidate']);
 const PATH_EDIT_TOOLS = new Set(['edit', 'ast_edit']);
-export const ZVEC_TOOL = 'mcp__zvec_grep_search';
 
 export function classify(call, config = {}, root) {
   const { toolName, input } = call;
@@ -14,7 +15,6 @@ export function classify(call, config = {}, root) {
   if (PATH_EDIT_TOOLS.has(toolName) && root && ordinaryWorkspacePath(root, input?.path)) return { kind: 'workspace-write' };
   if (READ_TOOLS.has(toolName)) return { kind: 'read' };
   if (SESSION_TOOLS.has(toolName)) return { kind: 'session-write' };
-  if (toolName === ZVEC_TOOL) return { kind: 'read', source: 'workspace-index' };
   // Exact registered names only; never treat arbitrary MCP tools as read-only.
   if ((config.memoryReadTools ?? []).includes(toolName)) return { kind: 'read', source: 'canonical-memory' };
   // Infrastructure declarations are supplied by a trusted adapter, never parsed from shell text.

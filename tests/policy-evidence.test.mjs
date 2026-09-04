@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { classify, decision, approvalHash, isEffect } from '../src/policy.mjs';
-import { captureEvidence, verifyEvidence, zvecFreshness } from '../src/evidence.mjs';
+import { captureEvidence, verifyEvidence } from '../src/evidence.mjs';
 import { runtimeConfig } from '../src/config.mjs';
 import { sensitiveRead } from '../src/workspace-write.mjs';
 import { digest, stable } from '../src/util.mjs';
 import { journalPath, runtimeLayout } from '../src/paths.mjs';
-import { fixture, call, code } from './helpers.mjs';
+import { fixture, call, run, action, code } from './helpers.mjs';
 
 function runtimeLayoutAt(dir) {
   const previous = process.env.OMP_RUNTIME_DIR; process.env.OMP_RUNTIME_DIR = dir;
@@ -82,19 +82,25 @@ test('evidence rejects invalid ranges and obvious secrets', async t => {
   writeFileSync(join(f.root, 'source.txt'), 'Bearer abcdefghijklmnopqrst');
   assert.throws(() => captureEvidence(f.root, 'source.txt', 1, 1), code('POSSIBLE_SECRET'));
 });
-test('zvec freshness header is parsed and never assumed', () => {
-  assert.equal(zvecFreshness('freshness: possibly_stale\nx.ts:1-4'), 'possibly_stale');
-  assert.equal(zvecFreshness('no header'), 'unknown');
+test('zvec search is a plain read: its input passes through untouched and counts as a call, not an effect', async t => {
+  const f = await fixture(t);
+  const input = { root: f.base, query: 'authentication flow', queries: ['a', 'b', 'c', 'd'], limit: 50, autoUpdate: true, hidden: true, noIgnore: true, follow: true };
+  const c = call({ toolCallId: 'z1', toolName: 'mcp__zvec_grep_search', input });
+  assert.equal(await run(f.kernel, c), undefined);
+  const row = action(f, c); assert.equal(row.is_effect, 0); assert.equal(row.state, 'succeeded'); assert.equal(row.input_hash, digest(input));
+  assert.equal(f.kernel.counters.revisions, 0);
+  assert.deepEqual(f.store.events(f.workspace.id).filter(e => e.kind.startsWith('search.')), []);
+  const ctx = f.kernel.context(); assert.equal(ctx.toolCalls, 1); assert.equal(ctx.effectsUsed, 0);
 });
-test('workspace search is bounded by revision, not refusal; query groups are capped', async t => {
-  const f = await fixture(t); const search = input => f.kernel.intent(call({ toolCallId: digest(input), toolName: 'mcp__zvec_grep_search', input }));
-  const revised = await search({ root: f.root, query: 'x', limit: 50, hidden: true, noIgnore: true });
-  assert.deepEqual(revised.input, { root: f.root, query: 'x', limit: 10, autoUpdate: false });
-  assert.deepEqual((await search({ root: f.root, query: 'y' })).input, { root: f.root, query: 'y', limit: 5, autoUpdate: false });
-  assert.equal(await search({ root: f.root, query: 'z', limit: 5, autoUpdate: false }), undefined);
-  assert.match((await search({ root: f.root, queries: ['a', 'b', 'c', 'd'] })).reason, /TOO_MANY_QUERY_GROUPS/);
-  await search({ root: f.base, query: 'foreign' });
-  assert.equal(f.store.events(f.workspace.id).some(e => e.kind === 'search.foreign_root'), true);
+test('a failed or interrupted zvec search is a read failure, never uncertainty or poison', async t => {
+  const f = await fixture(t); const search = id => call({ toolCallId: id, toolName: 'mcp__zvec_grep_search', input: { root: f.root, query: 'q' } });
+  assert.equal(await run(f.kernel, search('z-err'), { isError: true }), undefined);
+  assert.equal(action(f, search('z-err')).state, 'failed');
+  const other = await f.sibling('t2'); await other.kernel.intent(search('z-cut')); f.lapse(); f.store.sweep(f.workspace.id);
+  assert.equal(action(f, search('z-cut'), other.kernel).state, 'failed');
+  assert.deepEqual(f.store.unknownActions(f.workspace.id), []);
+  const ctx = f.kernel.context(); assert.equal(ctx.poisoned, false); assert.equal(ctx.blockedUntilReconciled, false);
+  assert.equal(await f.kernel.intent(call({ toolCallId: 'after' })), undefined);
 });
 test('ordinary literal workspace writes and in-tree edits are workspace-write; the rest is opaque', async t => {
   const f = await fixture(t);

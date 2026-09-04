@@ -29,9 +29,9 @@
 
 **커널**: 네 이벤트 1회 정산, `tool_execution_end` 단독 마감, 중첩 디스패치 키, 차단한 호출의 후속 이벤트는 계약 위반으로 세지 않음, 못 본 호출의 이벤트는 `unmatched*`, 승인 1회 소비, 저널 쓰기 실패 → poison(enforce 차단 / observe 기록), lease 상실 차단, context의 권한 부인 문구.
 
-**정책/근거**: 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec 입력 revise(limit/autoUpdate/scope 키 제거/그룹 상한/foreign root 이벤트), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
+**정책/근거**: 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec = read(입력 무수정·`revisions` 0·`search.*` 이벤트 없음·toolCalls +1/effects +0), zvec 실패·lapse = `failed`(unknown·poison 아님, 다음 효과 허용), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
 
-**확장(mock)**: 로드·도구 4개·명령·저널 사이클·compat report `ok`·before_agent_start 상태, evidence→checkpoint→candidate 체인과 `MEMORY_PORT_UNBOUND`, pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
+**확장(mock)**: 로드·도구 4개·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·`search.semanticDiscovery`=zvec), evidence→checkpoint→candidate 체인과 `MEMORY_PORT_UNBOUND`, pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
 
 **메모리**: 미바인딩/idempotency 없는 포트 거절, 후보≠정본, fresh 근거 게시, stale 근거 사전 거절, timeout→unknown→read-back ack, receipt 없음은 재시도 허가 아님, durable ack 없는 성공 거절, hash 불일치 거절, 투기적 kind·자격증명 거절, sending 중 lapse→unknown, validator 변조 차단.
 

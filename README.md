@@ -48,7 +48,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 | 중단·복구 | 하트비트 없이 lapse한 세션의 `executing` 효과는 `unknown`. `enforce` 모드에서는 해소 전까지 workspace의 새 효과 차단 | 외부 부작용의 실제 결과는 사람이 확인(`/runtime reconcile`) |
 | 사용량 | 세션당 도구 호출·효과 카운트(관측용, 상한 없음). 재개해도 이어진다. 카운터가 작업을 멈추는 경로는 없다 | 모델 토큰·하위 에이전트 과금은 미포함 |
 | 근거 | `runtime_evidence`: 파일 범위 hash 영수증. 게시 전 재검증 | hash는 진위·의미를 증명하지 않음 |
-| 검색 경계 | `mcp__zvec_grep_search` 입력을 revise: limit≤10, autoUpdate:false, hidden/noIgnore/follow 제거, query group≤3 | zvec 자체를 수정하지 않음 |
+| 검색 | `mcp__zvec_grep_search`는 read로 저널에 남을 뿐이다. 입력을 바꾸지 않고, 실패는 `failed`(unknown 아님). `before_agent_start`에 라우팅 힌트 한 줄: 의미·cross-file 탐색은 zvec 먼저, 정확·전수 검색은 native, 확정은 현재 소스 | 검색 전략·freshness·limit은 OMP와 zvec의 책임 |
 | 메모리 outbox | 후보→승인→전송→ack/unknown. Utopia가 정본 | 전송 계층 미바인딩(아래) |
 | 호환성 | API/컨텍스트 멤버 probe, 이벤트 counters, 버전별 report | 이벤트 payload 의미 변경은 counters로만 드러남 |
 
