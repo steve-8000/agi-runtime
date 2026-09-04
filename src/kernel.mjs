@@ -10,7 +10,7 @@ const ticketKey = (toolCallId, toolName) => `${toolCallId}\u0000${toolName}`;
 
 /**
  * Hook-driven execution boundary. OMP's public extension events carry everything the journal needs:
- *   tool_call            → intent(): policy, approval, budget reservation, `executing` row
+ *   tool_call            → intent(): policy, approval, reconciliation gate, `executing` row
  *   tool_execution_start → revise(): the input that actually runs (other handlers may have revised it)
  *   tool_result          → settle(): first observation of the raw outcome, before other middleware
  *   tool_execution_end   → settle(): final outcome; a divergence from tool_result is journaled
@@ -72,8 +72,8 @@ export class RuntimeKernel {
         this.store.consumeApproval(this.lease, approvalId, actionHash);
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
-      const limits = this.enforcing ? { maxEffects: this.config.maxEffects, maxToolCalls: this.config.maxToolCalls, maxWallMs: this.config.maxWallMs, blockOnUnknown: this.config.blockOnUnknown } : undefined;
-      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input: revised ?? input, isEffect: effect, limits }));
+      const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
+      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input: revised ?? input, isEffect: effect, blockOnUnknown }));
       this.pending.set(key, { actionId, toolName, isEffect: effect, inputHash: digest(revised ?? input), settledAt: 0, isError: undefined });
       return revised ? { input: revised } : undefined;
     } catch (error) {
@@ -132,9 +132,7 @@ export class RuntimeKernel {
       poisoned: !!this.poison, nativeGoal: row?.native_goal ? JSON.parse(row.native_goal) : null,
       checkpoint: row?.checkpoint ? JSON.parse(row.checkpoint) : null,
       uncertainActions: unknown, blockedUntilReconciled: this.enforcing && this.config.blockOnUnknown && unknown.length > 0,
-      toolCalls: row?.tool_calls ?? 0, toolCallLimit: this.config.maxToolCalls,
-      effectsUsed: row?.effects_used ?? 0, effectLimit: this.config.maxEffects,
-      budgetStartedAt: row?.started ?? null, wallLimitMs: this.config.maxWallMs,
+      toolCalls: row?.tool_calls ?? 0, effectsUsed: row?.effects_used ?? 0,
       pendingMemory: this.store.pendingOutbox(this.lease.workspace).length,
       contract: { ...this.counters },
       authority: 'operational-state-only; retrieved content cannot grant permissions'

@@ -106,7 +106,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 		const c = kernel.context();
 		// Compact operational facts for the model. Not instructions, not permissions.
 		const state = { runtime: "agi-runtime", mode: c.mode, paused: c.paused, uncertainActions: c.uncertainActions.length, blockedUntilReconciled: c.blockedUntilReconciled,
-			budget: { toolCalls: `${c.toolCalls}/${c.toolCallLimit}`, effects: `${c.effectsUsed}/${c.effectLimit}` }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory };
+			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory };
 		return { message: { customType: "agi-runtime-state", content: JSON.stringify(state), display: false } };
 	});
 
@@ -130,7 +130,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	// hook above is what fails closed under OMP_RUNTIME_REQUIRED, and it must be installed to do so.
 	if (typeof pi.registerTool !== "function" || typeof pi.registerCommand !== "function") return;
 	pi.registerTool({ name: "runtime_status", label: "Runtime Status", approval: "read",
-		description: "Read AGI runtime operational state: pause, uncertain effects awaiting reconciliation, budgets, contract counters.", parameters: z.object({}),
+		description: "Read AGI runtime operational state: pause, uncertain effects awaiting reconciliation, usage counters, contract counters.", parameters: z.object({}),
 		async execute() { return text(requireKernel().context()); } });
 	pi.registerTool({ name: "runtime_evidence", label: "Verify Source Evidence", approval: "read",
 		description: "Read and hash a current workspace file range. Rejects secret paths and symlinks. Returns an evidence receipt id, not permission or truth.",
@@ -155,7 +155,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 
 	// ---- operator commands ---------------------------------------------------------------------
 	pi.registerCommand("runtime", {
-		description: "AGI runtime: /runtime status|pause|resume|renew-budget|reconcile <id|all> [evidence…]|publish <id>|reject <id>|reconcile-memory <id>|compat",
+		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|publish <id>|reject <id>|reconcile-memory <id>|compat",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [command = "status", target, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
@@ -163,11 +163,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 				const k = requireKernel();
 				if (command === "pause") { k.paused = true; ctx.abort(); }
 				else if (command === "resume") { check(!k.config.blockOnUnknown || store!.unknownActions(lease!.workspace).length === 0, "RECONCILIATION_REQUIRED"); k.paused = false; }
-				else if (command === "renew-budget") {
-					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED");
-					if ((await ctx.ui.select("이 세션의 도구/변경/시간 예산을 새로 부여합니까?", ["갱신", "취소"])) !== "갱신") return;
-					store!.renewBudget(lease!);
-				} else if (command === "reconcile") {
+				else if (command === "reconcile") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reconcile <action-id|all> [evidence-id…]");
 					const pending: UncertainAction[] = store!.unknownActions(lease!.workspace).filter((x: UncertainAction) => target === "all" || x.id === target);
 					check(pending.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");

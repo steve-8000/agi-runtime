@@ -52,7 +52,7 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 
 커널 매핑:
 
-- `intent(call)` — classify → decision → (opt-in) 정확 입력 승인 → 예산 예약 + `executing` 행. 한 트랜잭션. 거절은 `{block, reason}`으로 모델에 돌아간다.
+- `intent(call)` — classify → decision → (opt-in) 정확 입력 승인 → unknown 해소 게이트 + 사용량 카운트 + `executing` 행. 한 트랜잭션. 거절은 `{block, reason}`으로 모델에 돌아간다.
 - `revise(id, name, args)` — 실행 입력 hash가 intent와 다르면 행을 갱신하고 `action.revised` 이벤트.
 - `settle(id, name, …, phase)` — 첫 관측이 결과를 확정한다. 이후 `isError`가 뒤집히면 `action.rewritten` 이벤트와 `rewrites` 카운트. `tool_result`가 오지 않는 경로(승인 거절, 다른 확장의 차단)는 `tool_execution_end`가 `failed`로 마감한다.
 
@@ -66,16 +66,16 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 
 ```text
 workspaces(id, root, paused)
-sessions(id, workspace, epoch, expires, has_ui, budgets…, native_goal, checkpoint)
+sessions(id, workspace, epoch, expires, has_ui, tool_calls, effects_used, native_goal, checkpoint)
 actions(id, workspace, session, epoch, tool, input_hash, is_effect, state, outcome_hash)
 events, evidence, outbox(+session), approvals(+session)
 ```
 
 사용자는 같은 저장소에서 여러 OMP 터미널을 동시에 연다(`~/.omp/agent/sessions/` 참조). 그래서 **lease는 세션 단위**다: 같은 세션을 두 프로세스가 동시에 잡는 것만 `SESSION_WRITER_BUSY`로 거절하고, 다른 세션은 하나의 workspace 저널을 공유한다. workspace 전체에 걸치는 사실은 둘뿐이다 — `paused`, 그리고 해소되지 않은 `unknown`. 둘 다 같은 working tree를 건드리는 모든 세션에 관계가 있다.
 
-`sweep(workspace)`는 `expires ≤ now`인 세션의 `executing` 효과를 `unknown`, 읽기를 `failed`, `sending` outbox를 `unknown`으로 옮긴다. acquire 시점과 매 효과 intent 직전에 **별도 트랜잭션으로** 실행한다 — 예산 거절로 롤백되어도 lapse 발견은 남아야 한다. 살아 있는 형제 세션의 `executing`은 건드리지 않는다.
+`sweep(workspace)`는 `expires ≤ now`인 세션의 `executing` 효과를 `unknown`, 읽기를 `failed`, `sending` outbox를 `unknown`으로 옮긴다. acquire 시점과 매 효과 intent 직전에 **별도 트랜잭션으로** 실행한다 — intent 거절(`RECONCILIATION_REQUIRED`, `DUPLICATE_ACTION`)로 롤백되어도 lapse 발견은 남아야 한다. 살아 있는 형제 세션의 `executing`은 건드리지 않는다.
 
-액션 ID는 `digest({session, tool, toolCallId})`. 같은 ID의 재디스패치는 거절한다(과거 성공을 재사용하는 것은 임의 도구에 안전하지 않다). 재개는 epoch만 올리고 예산 사용량은 유지한다.
+액션 ID는 `digest({session, tool, toolCallId})`. 같은 ID의 재디스패치는 거절한다(과거 성공을 재사용하는 것은 임의 도구에 안전하지 않다). 재개는 epoch만 올리고 사용량 카운터(`tool_calls`, `effects_used`)는 이어진다. 카운터는 관측용이다 — 상한도, 갱신 명령도 없다. 사람이 있는 세션이든 무인이든 카운터가 작업을 멈추는 경로는 두지 않는다.
 
 `reconcile`은 사람의 확인 기록이다. 근거 영수증은 선택 사항이고, `/runtime reconcile all`이 있다. 이전 버전처럼 근거를 필수로 요구하면 "터미널 닫다가 끊긴 bash 한 번"을 풀기 위해 파일 hash를 먼저 만들어야 했다.
 

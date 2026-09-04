@@ -2,423 +2,405 @@ TAP version 13
 # Subtest: loads with the tested contract, journals a full tool cycle, and reports compat ok
 ok 1 - loads with the tested contract, journals a full tool cycle, and reports compat ok
   ---
-  duration_ms: 19.379875
+  duration_ms: 21.890208
   type: 'test'
   ...
 # Subtest: runtime tools chain evidence into checkpoint and memory candidate without remote writes
 ok 2 - runtime tools chain evidence into checkpoint and memory candidate without remote writes
   ---
-  duration_ms: 10.462583
+  duration_ms: 12.645666
   type: 'test'
   ...
 # Subtest: /runtime pause blocks effects, resume restores; reconcile all clears uncertainty from a lapsed session
 ok 3 - /runtime pause blocks effects, resume restores; reconcile all clears uncertainty from a lapsed session
   ---
-  duration_ms: 1138.454
+  duration_ms: 1126.66575
   type: 'test'
   ...
 # Subtest: a host missing a required API member disables the runtime and lets tools run unless OMP_RUNTIME_REQUIRED=1
 ok 4 - a host missing a required API member disables the runtime and lets tools run unless OMP_RUNTIME_REQUIRED=1
   ---
-  duration_ms: 67.794209
+  duration_ms: 14.57575
   type: 'test'
   ...
 # Subtest: operator config in the runtime dir is honoured and a broken one fails closed
 ok 5 - operator config in the runtime dir is honoured and a broken one fails closed
   ---
-  duration_ms: 65.135792
+  duration_ms: 12.114875
   type: 'test'
   ...
 # Subtest: shutdown releases the lease so the same session can be resumed by the next process
 ok 6 - shutdown releases the lease so the same session can be resumed by the next process
   ---
-  duration_ms: 69.115916
+  duration_ms: 8.567875
   type: 'test'
   ...
 # Subtest: the four OMP events settle one action exactly once
 ok 7 - the four OMP events settle one action exactly once
   ---
-  duration_ms: 9.339333
+  duration_ms: 8.564208
   type: 'test'
   ...
 # Subtest: a nested xd:// device dispatch shares the outer toolCallId and both actions still settle
 ok 8 - a nested xd:// device dispatch shares the outer toolCallId and both actions still settle
   ---
-  duration_ms: 8.1085
+  duration_ms: 5.656208
   type: 'test'
   ...
 # Subtest: tool_execution_end alone settles a call whose tool_result never arrived
 ok 9 - tool_execution_end alone settles a call whose tool_result never arrived
   ---
-  duration_ms: 6.244917
+  duration_ms: 6.7815
   type: 'test'
   ...
 # Subtest: events for calls this runtime blocked are not contract violations
 ok 10 - events for calls this runtime blocked are not contract violations
   ---
-  duration_ms: 5.365
+  duration_ms: 5.11125
   type: 'test'
   ...
 # Subtest: events for calls whose tool_call never reached us are counted as contract drift
 ok 11 - events for calls whose tool_call never reached us are counted as contract drift
   ---
-  duration_ms: 4.687417
+  duration_ms: 4.634583
   type: 'test'
   ...
 # Subtest: approved exact input is consumed once and bound to the call
 ok 12 - approved exact input is consumed once and bound to the call
   ---
-  duration_ms: 6.3185
+  duration_ms: 7.4005
   type: 'test'
   ...
 # Subtest: a journal write failure after execution poisons enforcement until restart
 ok 13 - a journal write failure after execution poisons enforcement until restart
   ---
-  duration_ms: 5.474042
+  duration_ms: 11.282916
   type: 'test'
   ...
 # Subtest: observe mode reports poison but keeps journaling
 ok 14 - observe mode reports poison but keeps journaling
   ---
-  duration_ms: 6.902417
+  duration_ms: 9.869042
   type: 'test'
   ...
 # Subtest: a lost lease blocks every further intent
 ok 15 - a lost lease blocks every further intent
   ---
-  duration_ms: 5.946625
+  duration_ms: 5.468209
   type: 'test'
   ...
 # Subtest: context exposes what the model may know and nothing it may use as permission
 ok 16 - context exposes what the model may know and nothing it may use as permission
   ---
-  duration_ms: 6.360792
+  duration_ms: 9.161916
   type: 'test'
   ...
 # Subtest: unbound memory and servers without idempotency are refused
 ok 17 - unbound memory and servers without idempotency are refused
   ---
-  duration_ms: 8.701792
+  duration_ms: 8.769541
   type: 'test'
   ...
 # Subtest: candidate is not canonical and cannot bypass approval
 ok 18 - candidate is not canonical and cannot bypass approval
   ---
-  duration_ms: 6.970792
+  duration_ms: 5.883834
   type: 'test'
   ...
 # Subtest: approved fresh candidate reaches durable typed acknowledgement
 ok 19 - approved fresh candidate reaches durable typed acknowledgement
   ---
-  duration_ms: 7.048833
+  duration_ms: 10.326417
   type: 'test'
   ...
 # Subtest: changed evidence prevents publication before transport starts
 ok 20 - changed evidence prevents publication before transport starts
   ---
-  duration_ms: 6.19675
+  duration_ms: 6.266458
   type: 'test'
   ...
 # Subtest: write timeout remains unknown, never silently replays, then reconciles by read
 ok 21 - write timeout remains unknown, never silently replays, then reconciles by read
   ---
-  duration_ms: 17.360209
+  duration_ms: 20.807417
   type: 'test'
   ...
 # Subtest: missing remote receipt is not permission to retry
 ok 22 - missing remote receipt is not permission to retry
   ---
-  duration_ms: 9.363625
+  duration_ms: 10.807458
   type: 'test'
   ...
 # Subtest: HTTP-style success without durable receipt never becomes canonical
 ok 23 - HTTP-style success without durable receipt never becomes canonical
   ---
-  duration_ms: 7.154916
+  duration_ms: 9.1275
   type: 'test'
   ...
 # Subtest: payload mismatch in read-back acknowledgement fails closed
 ok 24 - payload mismatch in read-back acknowledgement fails closed
   ---
-  duration_ms: 6.1515
+  duration_ms: 7.120542
   type: 'test'
   ...
 # Subtest: memory candidate rejects speculative kinds and obvious credentials
 ok 25 - memory candidate rejects speculative kinds and obvious credentials
   ---
-  duration_ms: 4.708583
+  duration_ms: 3.634792
   type: 'test'
   ...
 # Subtest: crash during sending becomes unknown at lease takeover
 ok 26 - crash during sending becomes unknown at lease takeover
   ---
-  duration_ms: 5.637209
+  duration_ms: 4.485417
   type: 'test'
   ...
 # Subtest: schema validation cannot mutate an approved payload
 ok 27 - schema validation cannot mutate an approved payload
   ---
-  duration_ms: 5.077
+  duration_ms: 3.984209
   type: 'test'
   ...
 # Subtest: canonical JSON is order-independent and rejects nonfinite values
 ok 28 - canonical JSON is order-independent and rejects nonfinite values
   ---
-  duration_ms: 1.277209
+  duration_ms: 0.874709
   type: 'test'
   ...
 # Subtest: invalid and unknown runtime configuration fails closed
 ok 29 - invalid and unknown runtime configuration fails closed
   ---
-  duration_ms: 0.198333
+  duration_ms: 0.162458
   type: 'test'
   ...
 # Subtest: unknown tools and misleading MCP names are effects; only exact allowlisted names read
 ok 30 - unknown tools and misleading MCP names are effects; only exact allowlisted names read
   ---
-  duration_ms: 0.111458
+  duration_ms: 0.10275
   type: 'test'
   ...
 # Subtest: headless effects follow the operator policy: allowed and journaled by default, deniable
 ok 31 - headless effects follow the operator policy: allowed and journaled by default, deniable
   ---
-  duration_ms: 0.392333
+  duration_ms: 0.399958
   type: 'test'
   ...
 # Subtest: runtime approval is opt-in per tool and needs an interactive UI
 ok 32 - runtime approval is opt-in per tool and needs an interactive UI
   ---
-  duration_ms: 0.129792
+  duration_ms: 0.1765
   type: 'test'
   ...
 # Subtest: clab interactive exception requires trusted target fingerprint
 ok 33 - clab interactive exception requires trusted target fingerprint
   ---
-  duration_ms: 0.064583
+  duration_ms: 0.092
   type: 'test'
   ...
 # Subtest: other targets need point-of-action approval
 ok 34 - other targets need point-of-action approval
   ---
-  duration_ms: 0.0645
+  duration_ms: 0.069792
   type: 'test'
   ...
 # Subtest: model supplied operation descriptor is not trusted
 ok 35 - model supplied operation descriptor is not trusted
   ---
-  duration_ms: 0.052334
+  duration_ms: 0.076833
   type: 'test'
   ...
 # Subtest: approval hash binds input, session and epoch
 ok 36 - approval hash binds input, session and epoch
   ---
-  duration_ms: 0.165834
+  duration_ms: 0.177959
   type: 'test'
   ...
 # Subtest: file evidence detects modifications outside its excerpt too
 ok 37 - file evidence detects modifications outside its excerpt too
   ---
-  duration_ms: 6.455041
+  duration_ms: 6.629541
   type: 'test'
   ...
 # Subtest: evidence rejects parent traversal, symlinks, and secret paths
 ok 38 - evidence rejects parent traversal, symlinks, and secret paths
   ---
-  duration_ms: 7.036917
+  duration_ms: 8.044625
   type: 'test'
   ...
 # Subtest: evidence rejects invalid ranges and obvious secrets
 ok 39 - evidence rejects invalid ranges and obvious secrets
   ---
-  duration_ms: 6.437584
+  duration_ms: 5.753125
   type: 'test'
   ...
 # Subtest: zvec freshness header is parsed and never assumed
 ok 40 - zvec freshness header is parsed and never assumed
   ---
-  duration_ms: 0.196708
+  duration_ms: 0.230542
   type: 'test'
   ...
 # Subtest: workspace search is bounded by revision, not refusal; query groups are capped
 ok 41 - workspace search is bounded by revision, not refusal; query groups are capped
   ---
-  duration_ms: 7.385167
+  duration_ms: 7.355708
   type: 'test'
   ...
 # Subtest: ordinary literal workspace writes and in-tree edits are workspace-write; the rest is opaque
 ok 42 - ordinary literal workspace writes and in-tree edits are workspace-write; the rest is opaque
   ---
-  duration_ms: 4.930958
+  duration_ms: 6.584958
   type: 'test'
   ...
 # Subtest: dangling symlink cannot obtain workspace-write classification
 ok 43 - dangling symlink cannot obtain workspace-write classification
   ---
-  duration_ms: 5.487209
+  duration_ms: 14.257292
   type: 'test'
   ...
 # Subtest: a runtime dir that is a symlink into the workspace is refused as journal location
 ok 44 - a runtime dir that is a symlink into the workspace is refused as journal location
   ---
-  duration_ms: 6.11925
+  duration_ms: 10.185416
   type: 'test'
   ...
 # Subtest: sensitive reads are journaled for audit without being blocked
 ok 45 - sensitive reads are journaled for audit without being blocked
   ---
-  duration_ms: 8.40575
+  duration_ms: 8.35
   type: 'test'
   ...
 # Subtest: one session cannot be driven by two live processes
 ok 46 - one session cannot be driven by two live processes
   ---
-  duration_ms: 6.929958
+  duration_ms: 8.027792
   type: 'test'
   ...
 # Subtest: parallel sessions share one workspace journal without fencing each other
 ok 47 - parallel sessions share one workspace journal without fencing each other
   ---
-  duration_ms: 8.796458
+  duration_ms: 10.381875
   type: 'test'
   ...
 # Subtest: a live sibling mid-effect is not swept; a lapsed one becomes unknown and blocks new effects
 ok 48 - a live sibling mid-effect is not swept; a lapsed one becomes unknown and blocks new effects
   ---
-  duration_ms: 7.613208
+  duration_ms: 8.495667
   type: 'test'
   ...
 # Subtest: reads keep working while an effect awaits reconciliation
 ok 49 - reads keep working while an effect awaits reconciliation
   ---
-  duration_ms: 6.68
+  duration_ms: 6.753209
   type: 'test'
   ...
 # Subtest: interrupted reads are failures, never uncertain effects
 ok 50 - interrupted reads are failures, never uncertain effects
   ---
-  duration_ms: 6.8765
+  duration_ms: 10.833875
   type: 'test'
   ...
-# Subtest: resuming a session after a crash fences the old lease and keeps its budget usage
-ok 51 - resuming a session after a crash fences the old lease and keeps its budget usage
+# Subtest: resuming a session after a crash fences the old lease and keeps its usage counters
+ok 51 - resuming a session after a crash fences the old lease and keeps its usage counters
   ---
-  duration_ms: 6.233791
+  duration_ms: 14.66275
   type: 'test'
   ...
 # Subtest: duplicate tool dispatch is rejected after success
 ok 52 - duplicate tool dispatch is rejected after success
   ---
-  duration_ms: 8.24
+  duration_ms: 7.050917
   type: 'test'
   ...
-# Subtest: effect budget is reserved transactionally and persists
-ok 53 - effect budget is reserved transactionally and persists
+# Subtest: usage counters observe without capping: many calls and long elapsed time never block
+ok 53 - usage counters observe without capping: many calls and long elapsed time never block
   ---
-  duration_ms: 5.772125
+  duration_ms: 81.895958
   type: 'test'
   ...
-# Subtest: tool-call budget also bounds read-only loops
-ok 54 - tool-call budget also bounds read-only loops
+# Subtest: observe mode journals and counts but never blocks on reconciliation
+ok 54 - observe mode journals and counts but never blocks on reconciliation
   ---
-  duration_ms: 5.47625
-  type: 'test'
-  ...
-# Subtest: wall budget is checked before dispatch
-ok 55 - wall budget is checked before dispatch
-  ---
-  duration_ms: 4.204584
-  type: 'test'
-  ...
-# Subtest: observe mode journals and counts but never blocks on budget or reconciliation
-ok 56 - observe mode journals and counts but never blocks on budget or reconciliation
-  ---
-  duration_ms: 5.716167
+  duration_ms: 10.075209
   type: 'test'
   ...
 # Subtest: blockOnUnknown=false records uncertainty without halting effects
-ok 57 - blockOnUnknown=false records uncertainty without halting effects
+ok 55 - blockOnUnknown=false records uncertainty without halting effects
   ---
-  duration_ms: 5.9165
+  duration_ms: 8.191833
   type: 'test'
   ...
 # Subtest: pause is workspace-wide and survives new sessions
-ok 58 - pause is workspace-wide and survives new sessions
+ok 56 - pause is workspace-wide and survives new sessions
   ---
-  duration_ms: 5.16525
+  duration_ms: 4.462125
   type: 'test'
   ...
 # Subtest: approval is exact-input scoped and single use
-ok 59 - approval is exact-input scoped and single use
+ok 57 - approval is exact-input scoped and single use
   ---
-  duration_ms: 4.292041
+  duration_ms: 3.730041
   type: 'test'
   ...
 # Subtest: expired approval is rejected
-ok 60 - expired approval is rejected
+ok 58 - expired approval is rejected
   ---
-  duration_ms: 172.133917
+  duration_ms: 10.266959
   type: 'test'
   ...
 # Subtest: approval does not survive a session epoch change
-ok 61 - approval does not survive a session epoch change
+ok 59 - approval does not survive a session epoch change
   ---
-  duration_ms: 63.434833
+  duration_ms: 9.236167
   type: 'test'
   ...
 # Subtest: evidence cannot cross workspace scope
-ok 62 - evidence cannot cross workspace scope
+ok 60 - evidence cannot cross workspace scope
   ---
-  duration_ms: 40.464417
+  duration_ms: 7.32625
   type: 'test'
   ...
 # Subtest: nonzero exit and tool errors are observed failures, not successes and not uncertainty
-ok 63 - nonzero exit and tool errors are observed failures, not successes and not uncertainty
+ok 61 - nonzero exit and tool errors are observed failures, not successes and not uncertainty
   ---
-  duration_ms: 37.740625
+  duration_ms: 4.734375
   type: 'test'
   ...
 # Subtest: a revised execution input replaces the intent hash and is journaled
-ok 64 - a revised execution input replaces the intent hash and is journaled
+ok 62 - a revised execution input replaces the intent hash and is journaled
   ---
-  duration_ms: 52.48575
+  duration_ms: 6.828459
   type: 'test'
   ...
 # Subtest: a middleware rewrite of isError after settlement is journaled, not trusted
-ok 65 - a middleware rewrite of isError after settlement is journaled, not trusted
+ok 63 - a middleware rewrite of isError after settlement is journaled, not trusted
   ---
-  duration_ms: 43.538416
+  duration_ms: 3.509042
   type: 'test'
   ...
 # Subtest: goal state is a persistent mirror, not a second goal engine
-ok 66 - goal state is a persistent mirror, not a second goal engine
+ok 64 - goal state is a persistent mirror, not a second goal engine
   ---
-  duration_ms: 44.047875
+  duration_ms: 7.820958
   type: 'test'
   ...
 # Subtest: reconciliation needs an uncertain action; stale evidence is the caller's check, scope is ours
-ok 67 - reconciliation needs an uncertain action; stale evidence is the caller's check, scope is ours
+ok 65 - reconciliation needs an uncertain action; stale evidence is the caller's check, scope is ours
   ---
-  duration_ms: 57.812291
-  type: 'test'
-  ...
-# Subtest: budget renewal is refused while uncertainty is unresolved
-ok 68 - budget renewal is refused while uncertainty is unresolved
-  ---
-  duration_ms: 57.801167
+  duration_ms: 7.475083
   type: 'test'
   ...
 # Subtest: unsupported journal schema is refused rather than migrated blindly
-ok 69 - unsupported journal schema is refused rather than migrated blindly
+ok 66 - unsupported journal schema is refused rather than migrated blindly
   ---
-  duration_ms: 32.564209
+  duration_ms: 9.21625
   type: 'test'
   ...
-1..69
-# tests 69
+1..66
+# tests 66
 # suites 0
-# pass 69
+# pass 66
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 1469.211
+# duration_ms 1285.296625

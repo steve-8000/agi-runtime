@@ -1,8 +1,5 @@
 {
   "mode": "enforce",
-  "maxEffects": 100,
-  "maxToolCalls": 500,
-  "maxWallMs": 3600000,
   "blockOnUnknown": true,
   "headlessEffects": "allow",
   "requireApproval": [],

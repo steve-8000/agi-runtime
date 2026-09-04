@@ -47,7 +47,7 @@ test('loads with the tested contract, journals a full tool cycle, and reports co
   assert.deepEqual(s.db.prepare('SELECT tool,is_effect,state FROM actions ORDER BY created').all().map(r => ({ ...r })),
     [{ tool: 'read', is_effect: 0, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'failed' }]);
   const state = JSON.parse(h.handlers.get('before_agent_start')({}, h.ctx).message.content);
-  assert.equal(state.budget.effects, '2/100'); assert.equal(state.blockedUntilReconciled, false);
+  assert.deepEqual(state.usage, { toolCalls: 3, effects: 2 }); assert.equal(state.blockedUntilReconciled, false);
 });
 test('runtime tools chain evidence into checkpoint and memory candidate without remote writes', async t => {
   const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);

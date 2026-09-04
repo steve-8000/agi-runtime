@@ -59,8 +59,7 @@ probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime �
 
 | 키 | 기본 | 효과 |
 |---|---|---|
-| `mode` | `enforce` | `observe`: 예산·unknown·poison으로 차단하지 않고 기록만 |
-| `maxToolCalls` / `maxEffects` / `maxWallMs` | 500 / 100 / 3,600,000 | 세션당. 재개해도 유지. `/runtime renew-budget` |
+| `mode` | `enforce` | `observe`: unknown·poison으로 차단하지 않고 기록만 |
 | `blockOnUnknown` | `true` | lapse한 효과가 해소될 때까지 workspace의 새 효과 차단 |
 | `headlessEffects` | `allow` | `deny`: `hasUI=false` 세션의 효과 차단(`omp -p` 포함). k8s는 어느 쪽이든 `kubernetes-approval.ts`가 headless 차단 |
 | `requireApproval` | `[]` | 나열한 도구는 정확 입력·1회용 승인 프롬프트(UI 필요) |
@@ -83,13 +82,13 @@ probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime �
 
 확인 대화상자는 사람의 attestation이다. 자동 재실행은 없다. `blockOnUnknown:false`로 두면 차단 없이 기록만 남는다.
 
-### 6.2 예산
+### 6.2 사용량 카운터
 
-`TOOL_BUDGET_EXHAUSTED` / `EFFECT_BUDGET_EXHAUSTED` / `WALL_BUDGET_EXHAUSTED` → `/runtime renew-budget`. unknown이 남아 있으면 갱신을 거절한다.
+`/runtime status`의 `toolCalls`·`effectsUsed`는 관측용이다. 상한·갱신 명령·차단 코드는 없다. 예전 config의 `maxToolCalls` / `maxEffects` / `maxWallMs`는 `UNKNOWN_RUNTIME_CONFIG_KEY`로 attach를 실패시키므로 `~/.omp/runtime/config.json`에서 지운다.
 
 ### 6.3 저널 손상·디스크
 
-실행 후 저널 쓰기가 실패하면 `RUNTIME_JOURNAL_POISONED`로 이후 효과를 차단한다(enforce). 세션 재시작으로 풀린다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·예산이 사라진다. 스키마가 다르면(`UNSUPPORTED_SCHEMA`) 마이그레이션하지 않고 거절한다 — 파일을 옮기고 새로 시작한다.
+실행 후 저널 쓰기가 실패하면 `RUNTIME_JOURNAL_POISONED`로 이후 효과를 차단한다(enforce). 세션 재시작으로 풀린다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·사용량이 사라진다. 스키마가 다르면(`UNSUPPORTED_SCHEMA`) 마이그레이션하지 않고 거절한다 — 파일을 옮기고 새로 시작한다.
 
 ### 6.4 lease
 

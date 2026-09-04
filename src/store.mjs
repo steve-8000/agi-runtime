@@ -105,14 +105,14 @@ export class RuntimeStore {
     check(Number.isSafeInteger(ttl) && ttl >= 1000, 'INVALID_TTL');
     return this.transaction(() => {
       check(this.db.prepare('SELECT 1 FROM workspaces WHERE id=?').get(workspace), 'NO_WORKSPACE');
-      const row = this.db.prepare('SELECT workspace,epoch,expires,started FROM sessions WHERE id=?').get(session);
+      const row = this.db.prepare('SELECT workspace,epoch,expires FROM sessions WHERE id=?').get(session);
       check(!row || row.workspace === workspace, 'SESSION_WORKSPACE_MISMATCH');
       // The same session resumed in two processes at once would double-count and race the journal.
       check(!row || row.expires <= this.now(), 'SESSION_WRITER_BUSY');
       this.sweep(workspace);
       const epoch = (row?.epoch ?? 0) + 1;
       const now = this.now();
-      // Budgets survive resume on purpose: reopening a session is not a new allowance.
+      // Usage counters survive resume: reopening a session continues its history rather than starting one.
       this.db.prepare(`INSERT INTO sessions(id,workspace,epoch,expires,has_ui,started,updated) VALUES(?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET epoch=excluded.epoch,expires=excluded.expires,has_ui=excluded.has_ui,updated=excluded.updated`)
         .run(session, workspace, epoch, now + ttl, hasUI ? 1 : 0, now, now);
@@ -148,7 +148,7 @@ export class RuntimeStore {
     return this.db.prepare('SELECT paused FROM workspaces WHERE id=?').get(workspace)?.paused === 1;
   }
   sessionRow(session) {
-    return this.db.prepare('SELECT native_goal,checkpoint,effects_used,tool_calls,started,has_ui FROM sessions WHERE id=?').get(session);
+    return this.db.prepare('SELECT native_goal,checkpoint,effects_used,tool_calls,has_ui FROM sessions WHERE id=?').get(session);
   }
   mirrorGoal(lease, goal) {
     this.transaction(() => {
@@ -167,25 +167,18 @@ export class RuntimeStore {
     });
   }
   /**
-   * Record intent before the tool runs. `limits` present → budget and reconciliation are enforced
-   * inside the same transaction, so two concurrent calls cannot both take the last unit.
+   * Record intent before the tool runs. `blockOnUnknown` → an effect is refused while the workspace
+   * has unreconciled `unknown` effects, checked inside the same transaction as the row insert.
+   * Usage counters (tool_calls, effects_used) are observation only; nothing here caps them.
    */
-  beginAction(lease, { actionId, tool, input, isEffect = true, limits }) {
-    // The sweep commits on its own: a refused reservation must not roll back the discovery of lapsed work.
+  beginAction(lease, { actionId, tool, input, isEffect = true, blockOnUnknown = false }) {
+    // The sweep commits on its own: a refused intent must not roll back the discovery of lapsed work.
     if (isEffect) this.transaction(() => this.sweep(lease.workspace));
     return this.transaction(() => {
       this.assertLease(lease);
       // Returning a prior success is unsafe for arbitrary tools. All repeated dispatches are rejected.
       check(!this.db.prepare('SELECT 1 FROM actions WHERE id=?').get(actionId), 'DUPLICATE_ACTION');
-      const session = this.db.prepare('SELECT effects_used,tool_calls,started FROM sessions WHERE id=?').get(lease.session);
-      if (limits) {
-        check(session.tool_calls < limits.maxToolCalls, 'TOOL_BUDGET_EXHAUSTED');
-        check(this.now() - session.started < limits.maxWallMs, 'WALL_BUDGET_EXHAUSTED');
-        if (isEffect) {
-          check(!limits.blockOnUnknown || this.unknownActions(lease.workspace).length === 0, 'RECONCILIATION_REQUIRED');
-          check(session.effects_used < limits.maxEffects, 'EFFECT_BUDGET_EXHAUSTED');
-        }
-      }
+      if (isEffect && blockOnUnknown) check(this.unknownActions(lease.workspace).length === 0, 'RECONCILIATION_REQUIRED');
       this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(isEffect ? 1 : 0, this.now(), lease.session);
       const inputHash = digest(input);
       this.db.prepare('INSERT INTO actions(id,workspace,session,epoch,tool,input_hash,is_effect,state,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)')
@@ -219,14 +212,6 @@ export class RuntimeStore {
       this.db.prepare('UPDATE actions SET state=?,outcome_hash=?,updated=? WHERE id=?')
         .run(ok ? 'succeeded' : 'failed', outcomeHash, this.now(), actionId);
       this.emit(lease.workspace, 'action.finished', { actionId, ok, outcomeHash });
-    });
-  }
-  renewBudget(lease) {
-    this.transaction(() => {
-      this.assertLease(lease);
-      check(this.unknownActions(lease.workspace).length === 0, 'RECONCILIATION_REQUIRED');
-      this.db.prepare('UPDATE sessions SET effects_used=0,tool_calls=0,started=?,updated=? WHERE id=?').run(this.now(), this.now(), lease.session);
-      this.emit(lease.workspace, 'budget.renewed', { session: lease.session });
     });
   }
   unknownActions(workspace) {

@@ -5,7 +5,7 @@ Scouts and reviewers return evidence, not repository edits or authority.
 
 Reuse OMP's native goal and session system. Implement a coherent slice before testing.
 Run the narrow relevant checks, repair observed failures, then run the normal gate once.
-Stop at completion, uncertainty, a budget boundary, denied approval, or a user interrupt.
+Stop at completion, uncertainty, denied approval, or a user interrupt.
 Do not install a second autonomous continuation loop.
 
 Use native search for exact/exhaustive queries and zvec-grep for semantic workspace discovery.

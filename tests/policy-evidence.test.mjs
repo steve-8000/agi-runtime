@@ -20,8 +20,7 @@ test('canonical JSON is order-independent and rejects nonfinite values', () => {
   assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 })); assert.throws(() => stable({ n: NaN }), code('NON_FINITE'));
 });
 test('invalid and unknown runtime configuration fails closed', () => {
-  for (const raw of [{ maxEffects: -1 }, { maxToolCalls: NaN }, { maxWallMs: 0 }]) assert.throws(() => runtimeConfig(raw), code('INVALID_RUNTIME_BUDGET'));
-  assert.throws(() => runtimeConfig({ permission: 'yolo' }), code('UNKNOWN_RUNTIME_CONFIG_KEY'));
+  for (const raw of [{ permission: 'yolo' }, { maxEffects: 100 }, { maxToolCalls: 500 }, { maxWallMs: 3600000 }]) assert.throws(() => runtimeConfig(raw), code('UNKNOWN_RUNTIME_CONFIG_KEY'));
   assert.throws(() => runtimeConfig({ mode: 'trust-me' }), code('INVALID_RUNTIME_MODE'));
   assert.throws(() => runtimeConfig({ headlessEffects: 'maybe' }), code('INVALID_HEADLESS_POLICY'));
   assert.equal(runtimeConfig().mode, 'enforce');

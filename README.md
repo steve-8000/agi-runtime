@@ -9,7 +9,7 @@
 이전 버전은 OMP 소스(`wrapper.ts`)를 패치해 실행 경계를 넣었다. 실제 설치본은 Homebrew의 **컴파일된 단일 바이너리**(`omp/18.1.10`, 128MB)이므로 그 패치는 사용자의 실행 경로에 적용될 수 없었다. 이번 버전은 그 경계를 OMP의 **공개 확장 이벤트**로 옮겼다.
 
 ```text
-tool_call            → intent()  : 정책, (opt-in) 정확 입력 승인, 예산 예약, `executing` 행
+tool_call            → intent()  : 정책, (opt-in) 정확 입력 승인, unknown 해소 게이트, `executing` 행
 tool_execution_start → revise()  : 실제로 실행되는 입력 (다른 확장이 수정했을 수 있음)
 tool_result          → settle()  : 원시 결과의 첫 관측 (다른 middleware 이전)
 tool_execution_end   → settle()  : 최종 결과; isError 가 tool_result 와 뒤집히면 저널에 기록
@@ -46,7 +46,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 |---|---|---|
 | 운영 저널 | workspace별 SQLite(WAL, FULL sync). 도구 호출마다 intent→outcome. 세션별 writer lease와 epoch | 같은 OS 사용자 프로세스나 악성 확장을 격리하지 못함 |
 | 중단·복구 | 하트비트 없이 lapse한 세션의 `executing` 효과는 `unknown`. `enforce` 모드에서는 해소 전까지 workspace의 새 효과 차단 | 외부 부작용의 실제 결과는 사람이 확인(`/runtime reconcile`) |
-| 예산 | 세션당 도구 호출·효과·경과시간. 재개해도 초기화 안 됨. `/runtime renew-budget` | 모델 토큰·하위 에이전트 과금은 미포함 |
+| 사용량 | 세션당 도구 호출·효과 카운트(관측용, 상한 없음). 재개해도 이어진다. 카운터가 작업을 멈추는 경로는 없다 | 모델 토큰·하위 에이전트 과금은 미포함 |
 | 근거 | `runtime_evidence`: 파일 범위 hash 영수증. 게시 전 재검증 | hash는 진위·의미를 증명하지 않음 |
 | 검색 경계 | `mcp__zvec_grep_search` 입력을 revise: limit≤10, autoUpdate:false, hidden/noIgnore/follow 제거, query group≤3 | zvec 자체를 수정하지 않음 |
 | 메모리 outbox | 후보→승인→전송→ack/unknown. Utopia가 정본 | 전송 계층 미바인딩(아래) |
@@ -59,7 +59,6 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 ```json
 {
   "mode": "enforce",            // "observe": 저널·카운트만, 차단 없음
-  "maxEffects": 100, "maxToolCalls": 500, "maxWallMs": 3600000,
   "blockOnUnknown": true,       // false: unknown 을 기록만 하고 효과를 계속 허용
   "headlessEffects": "allow",   // "deny": hasUI=false 세션(omp -p)의 write/edit/bash 등 차단
   "requireApproval": [],        // 예: ["eval"] → 정확 입력·1회용 승인 프롬프트
@@ -77,18 +76,17 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 ```text
 /runtime status
 /runtime pause | resume
-/runtime renew-budget
 /runtime reconcile <action-id|all> [evidence-id…]     # 사람의 확인 기록. 자동 재실행 없음
 /runtime publish <candidate-id> | reject <candidate-id> | reconcile-memory <candidate-id>
 /runtime compat
 ```
 
-모델 도구: `runtime_status`, `runtime_evidence`, `runtime_checkpoint`, `runtime_memory_candidate`. 게시·예산 갱신·불명 해소는 모델 도구로 노출하지 않는다.
+모델 도구: `runtime_status`, `runtime_evidence`, `runtime_checkpoint`, `runtime_memory_candidate`. 게시·불명 해소는 모델 도구로 노출하지 않는다.
 
 ## 검증
 
 ```sh
-node --experimental-strip-types --test tests/*.test.mjs   # 69 tests
+node --experimental-strip-types --test tests/*.test.mjs   # 66 tests
 node scripts/check.mjs                                    # JS syntax + tsc (types/pi-coding-agent.d.ts 기준)
 node scripts/demo.mjs                                     # offline fake memory port
 ```

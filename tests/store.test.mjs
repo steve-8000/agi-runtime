@@ -36,7 +36,7 @@ test('interrupted reads are failures, never uncertain effects', async t => {
   assert.deepEqual(f.store.unknownActions(f.workspace.id), []);
   assert.equal(action(f, call({ toolName: 'grep' })).state, 'failed');
 });
-test('resuming a session after a crash fences the old lease and keeps its budget usage', async t => {
+test('resuming a session after a crash fences the old lease and keeps its usage counters', async t => {
   const f = await fixture(t); await run(f.kernel, call()); f.store.close(); f.advance(30001);
   const reopened = await RuntimeStore.open(f.dbPath, { now: f.now }); f.stores.push(reopened);
   const lease = reopened.acquire(f.workspace.id, 'session');
@@ -47,26 +47,21 @@ test('duplicate tool dispatch is rejected after success', async t => {
   const f = await fixture(t); await run(f.kernel, call());
   assert.match((await f.kernel.intent(call())).reason, /DUPLICATE_ACTION/);
 });
-test('effect budget is reserved transactionally and persists', async t => {
-  const f = await fixture(t, { config: { maxEffects: 1 } });
-  const outcomes = await Promise.all([f.kernel.intent(call()), f.kernel.intent(call({ toolCallId: '2' }))]);
-  assert.equal(outcomes.filter(x => x === undefined).length, 1);
-  assert.match(outcomes.find(x => x?.block).reason, /EFFECT_BUDGET_EXHAUSTED/);
-  assert.equal(f.kernel.context().effectsUsed, 1);
+test('usage counters observe without capping: many calls and long elapsed time never block', async t => {
+  const f = await fixture(t);
+  for (let i = 0; i < 120; i++) assert.equal(await run(f.kernel, call({ toolCallId: `e${i}` })), undefined);
+  for (let i = 0; i < 720; i++) { f.advance(20000); f.store.heartbeat(f.lease); }   // four hours of a live, heartbeating session
+  assert.equal(await run(f.kernel, call({ toolCallId: 'late' })), undefined);
+  assert.equal(await run(f.kernel, call({ toolCallId: 'r', toolName: 'grep', input: { pattern: 'x' } })), undefined);
+  const c = f.kernel.context();
+  assert.equal(c.effectsUsed, 121); assert.equal(c.toolCalls, 122);
 });
-test('tool-call budget also bounds read-only loops', async t => {
-  const f = await fixture(t, { config: { maxToolCalls: 1 } });
-  await f.kernel.intent(call({ toolName: 'grep' }));
-  assert.match((await f.kernel.intent(call({ toolName: 'grep', toolCallId: '2' }))).reason, /TOOL_BUDGET_EXHAUSTED/);
-});
-test('wall budget is checked before dispatch', async t => {
-  const f = await fixture(t, { config: { maxWallMs: 10 } }); f.advance(11);
-  assert.match((await f.kernel.intent(call({ toolName: 'grep' }))).reason, /WALL_BUDGET_EXHAUSTED/);
-});
-test('observe mode journals and counts but never blocks on budget or reconciliation', async t => {
-  const f = await fixture(t, { config: { mode: 'observe', maxEffects: 1 } });
-  await run(f.kernel, call()); assert.equal(await f.kernel.intent(call({ toolCallId: '2' })), undefined);
-  assert.equal(f.kernel.context().effectsUsed, 2); assert.equal(f.kernel.context().blockedUntilReconciled, false);
+test('observe mode journals and counts but never blocks on reconciliation', async t => {
+  const f = await fixture(t, { config: { mode: 'observe' } }); const other = await f.sibling('t2', { config: { mode: 'observe' } });
+  await other.kernel.intent(call({ toolCallId: 'o1' })); f.lapse();
+  assert.equal(await run(f.kernel, call({ toolCallId: 'c2' })), undefined);
+  assert.equal(f.store.unknownActions(f.workspace.id).length, 1);
+  assert.equal(f.kernel.context().effectsUsed, 1); assert.equal(f.kernel.context().blockedUntilReconciled, false);
 });
 test('blockOnUnknown=false records uncertainty without halting effects', async t => {
   const f = await fixture(t, { config: { blockOnUnknown: false } }); const other = await f.sibling('t2', { config: { blockOnUnknown: false } });
@@ -129,12 +124,7 @@ test('reconciliation needs an uncertain action; stale evidence is the caller\'s 
   assert.throws(() => f.store.reconcile(f.lease, id, ['nope']), code('EVIDENCE_SCOPE_MISMATCH'));
   assert.throws(() => f.store.reconcile(f.lease, 'missing'), code('ACTION_STATE_CONFLICT'));
   f.store.reconcile(f.lease, id); assert.equal(f.store.unknownActions(f.workspace.id).length, 0);
-  assert.doesNotThrow(() => f.store.renewBudget(f.lease));
-});
-test('budget renewal is refused while uncertainty is unresolved', async t => {
-  const f = await fixture(t); const other = await f.sibling('t2');
-  await other.kernel.intent(call({ toolCallId: 'o1' })); f.lapse(); f.store.sweep(f.workspace.id);
-  assert.throws(() => f.store.renewBudget(f.lease), code('RECONCILIATION_REQUIRED'));
+  assert.equal(await f.kernel.intent(call({ toolCallId: 'c2' })), undefined);
 });
 test('unsupported journal schema is refused rather than migrated blindly', async t => {
   const f = await fixture(t); f.store.db.exec('PRAGMA user_version=7'); f.store.close();

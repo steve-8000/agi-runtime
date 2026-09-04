@@ -6,7 +6,7 @@
 
 | 검사 | 결과 | 범위 | 증거 |
 |---|---|---|---|
-| `node --experimental-strip-types --test tests/*.test.mjs` | 69 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
+| `node --experimental-strip-types --test tests/*.test.mjs` | 66 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
 | `node scripts/check.mjs` | JS 22개 syntax, `tsc -p .` 통과 | `types/pi-coding-agent.d.ts`에 대한 typecheck. 전체 OMP typecheck 아님 | `evidence/check.jsonl` |
 | `node scripts/demo.mjs` | 통과 | offline fake memory port. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `omp -p … -e extension/index.ts` (임시 runtime dir, `OMP_RUNTIME_REQUIRED=1`) | 로드·attach·저널·release 확인. 첫 실행에서 중첩 `xd://` 결함 발견, 수정 후 재실행 네 행 `succeeded` | 실제 바이너리(Bun 런타임, `bun:sqlite`) | 본문 §라이브 |
@@ -25,7 +25,7 @@
 
 ## 테스트가 방어하는 불변식
 
-**저널/lease**: 같은 세션 이중 실행 거절, 형제 세션 공존, 살아 있는 형제의 `executing`은 sweep 안 함, lapse한 형제의 효과는 `unknown`→새 효과 차단(읽기는 허용), 읽기 중단은 `failed`, 재개 시 epoch 증가·예산 유지·구 lease fencing, 중복 디스패치 거절, 예산 예약 경쟁(효과/도구/시간), observe 모드 비차단, `blockOnUnknown:false`, pause workspace 전역, 승인 정확 입력·1회·만료·epoch, evidence scope, nonzero exit/isError = `failed`(unknown 아님), 입력 수정 저널, isError 뒤집기 저널, goal mirror, reconcile(근거 선택·scope 검사·`all`), 예산 갱신은 unknown 해소 후, 스키마 버전 불일치 거절.
+**저널/lease**: 같은 세션 이중 실행 거절, 형제 세션 공존, 살아 있는 형제의 `executing`은 sweep 안 함, lapse한 형제의 효과는 `unknown`→새 효과 차단(읽기는 허용), 읽기 중단은 `failed`, 재개 시 epoch 증가·사용량 카운터 유지·구 lease fencing, 중복 디스패치 거절, 사용량 카운터 무상한(호출 수·경과 시간이 차단하지 않음), observe 모드 unknown 비차단, `blockOnUnknown:false`, pause workspace 전역, 승인 정확 입력·1회·만료·epoch, evidence scope, nonzero exit/isError = `failed`(unknown 아님), 입력 수정 저널, isError 뒤집기 저널, goal mirror, reconcile(근거 선택·scope 검사·`all`·해소 후 새 효과 허용), 스키마 버전 불일치 거절.
 
 **커널**: 네 이벤트 1회 정산, `tool_execution_end` 단독 마감, 중첩 디스패치 키, 차단한 호출의 후속 이벤트는 계약 위반으로 세지 않음, 못 본 호출의 이벤트는 `unmatched*`, 승인 1회 소비, 저널 쓰기 실패 → poison(enforce 차단 / observe 기록), lease 상실 차단, context의 권한 부인 문구.
 
