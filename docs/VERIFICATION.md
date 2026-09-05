@@ -6,7 +6,7 @@
 
 | 검사 | 결과 | 범위 | 증거 |
 |---|---|---|---|
-| `node --experimental-strip-types --test tests/*.test.mjs` | 79 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템·Ed25519 키. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
+| `node --experimental-strip-types --test tests/*.test.mjs` | 82 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템·Ed25519 키. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
 | `node scripts/check.mjs` | JS 23개 syntax, `tsc -p .` 통과 | `types/pi-coding-agent.d.ts`에 대한 typecheck. 전체 OMP typecheck 아님 | `evidence/check.jsonl` |
 | `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 불명 note → 백엔드 검사 거절 → status → 서명 receipt로 `reconciled`, publish 성공만으로 `submitted`, receipt로 `published` | offline, 스크립트가 만든 임시 서명키. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, counters intents/starts/results/ends 2/2/2/2, **`turns: 3`**(이전 실행 4; 프롬프트 1 + 모델 호출당 `turn_start`) | auto-discovery 경로로 실제 `omp -p` 1회. `turn_start`가 18.1.10에서 실제로 발화함을 확인 | `evidence/compat-live.json` |
@@ -23,6 +23,7 @@
 - 확장이 컴파일된 OMP 바이너리 안에서 로드된다: `.ts` 진입점, `../src/*.mjs` 상대 import, `bun:sqlite`, `import type` 제거 모두 문제 없음.
 - probe: API 멤버 9개, 컨텍스트 멤버 8개 모두 present. `pi.pi.VERSION === "18.1.10"`, `getAgentDir()` 동작.
 - 이벤트 순서와 counters가 소스 독해(`docs/SOURCE-AUDIT.md`)와 일치. `tool_execution_start.args`가 실제 실행 입력.
+- `xd://` 봉투는 디스패치되는 도구로 분류된다: 디스패치된 회상 read는 게이트를 만족시키고 봉투는 효과가 아니며, 디스패치된 편집·미지 device는 그대로 효과다. 운영자 `/runtime recall skip`은 goal 하나만 해제하고 `recall.override`로 기록된다(모델은 호출 불가).
 - 중첩 디스패치(`write` → `xd://runtime_status`)는 외부 호출과 같은 `toolCallId`. toolCallId 단독 키는 외부 행을 `executing`으로 남겼다(다음 세션에서 거짓 `unknown`). `(toolCallId, toolName)` 키로 수정, 회귀 테스트 `tests/kernel.test.mjs` "a nested xd:// device dispatch …".
 - `omp -p`는 `hasUI=false`; 기본 정책(`headlessEffects: allow`)에서 `bash`가 실행되고 `has_ui:0`으로 저널됨.
 - 종료 시 `writer.released`, lease `expires=0`. 이후 같은 세션 ID를 다른 프로세스가 acquire 가능(테스트).

@@ -103,14 +103,27 @@ test('a failed or interrupted zvec search is a read failure, never uncertainty o
   const ctx = f.kernel.context(); assert.equal(ctx.poisoned, false); assert.equal(ctx.blockedUntilReconciled, false);
   assert.equal(await f.kernel.intent(call({ toolCallId: 'after' })), undefined);
 });
+test('an xd:// dispatch is classified as the tool it dispatches, never as the envelope', async t => {
+  const f = await fixture(t);
+  const cfg = { memoryReadTools: ['mcp__clab_mem_mem_search'] };
+  const dev = (tool, args) => classify(call({ toolName: 'write', input: { path: `xd://${tool}`, content: JSON.stringify(args) } }), cfg, f.root);
+  assert.deepEqual(dev('mcp__zvec_grep_search', { root: f.root, query: 'q' }), { kind: 'read' });
+  assert.deepEqual(dev('mcp__clab_mem_mem_search', { query: 'q' }), { kind: 'read', source: 'canonical-memory' });
+  assert.deepEqual(dev('ast_edit', { path: 'source.txt' }), { kind: 'workspace-write' });
+  assert.deepEqual(dev('mcp__clab_mem_mem_task_note', { task_key: 'k' }), { kind: 'opaque-exec' }, 'a dispatched write stays an effect');
+  assert.deepEqual(classify(call({ toolName: 'write', input: { path: `xd://mcp__zvec_grep_search`, content: 'not json' } }), cfg, f.root), { kind: 'read' }, 'malformed args still classify by target');
+  assert.deepEqual(classify(call({ toolName: 'write', input: { path: 'new.txt', content: 'x' } }), cfg, f.root), { kind: 'workspace-write' }, 'a plain file write is untouched');
+});
 test('ordinary literal workspace writes and in-tree edits are workspace-write; the rest is opaque', async t => {
   const f = await fixture(t);
   assert.equal(classify(call({ toolName: 'write', input: { path: 'new/source.ts', content: 'export const n = 1;' } }), {}, f.root).kind, 'workspace-write');
   assert.equal(classify(call({ toolName: 'edit', input: { path: 'source.txt', old_string: 'a', new_string: 'b' } }), {}, f.root).kind, 'workspace-write');
   assert.equal(classify(call({ toolName: 'edit', input: { path: '../outside', old_string: 'a', new_string: 'b' } }), {}, f.root).kind, 'opaque-write');
-  for (const input of [{ path: 'AGENTS.md', content: 'replace policy' }, { path: '.omp/config.yml', content: 'tools: {}' }, { path: '../outside', content: 'x' }, { path: 'xd://exec', content: 'x' }, { path: 'script.sh', content: '#!/bin/sh\necho x' }]) {
+  for (const input of [{ path: 'AGENTS.md', content: 'replace policy' }, { path: '.omp/config.yml', content: 'tools: {}' }, { path: '../outside', content: 'x' }, { path: 'script.sh', content: '#!/bin/sh\necho x' }]) {
     assert.equal(classify(call({ toolName: 'write', input }), {}, f.root).kind, 'opaque-write');
   }
+  // A device path is a dispatch, not a file write: an unknown device stays an effect under its own name.
+  assert.equal(classify(call({ toolName: 'write', input: { path: 'xd://exec', content: 'x' } }), {}, f.root).kind, 'opaque-exec');
 });
 test('dangling symlink cannot obtain workspace-write classification', async t => {
   const f = await fixture(t); symlinkSync('/nonexistent-runtime-target', join(f.root, 'dangling'));

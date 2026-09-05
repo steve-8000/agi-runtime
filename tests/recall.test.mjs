@@ -63,6 +63,27 @@ test('a resumed session with a task record must read that record, not merely sea
   assert.match((await k.intent(bash('b2'))).reason, /RECALL_REQUIRED/, 'read this turn is not yet visible');
   k.turnStart(); assert.equal(await run(k, bash('b3')), undefined);
 });
+test('a dispatched recall satisfies the gate; the xd:// envelope is not itself an effect', async t => {
+  const f = await fixture(t, { config }); f.kernel.turnStart();
+  const wrapper = call({ toolCallId: 'w1', toolName: 'write', input: { path: `xd://${T.search}`, content: JSON.stringify({ query: 'q' }) } });
+  assert.equal(await run(f.kernel, wrapper), undefined, 'the envelope dispatches a read, so the gate cannot hold it');
+  assert.equal(action(f, wrapper).is_effect, 0);
+  await run(f.kernel, mem('w1', T.search)); // the nested dispatch reuses the outer toolCallId
+  assert.match((await f.kernel.intent(bash('b1'))).reason, /settles this turn/);
+  f.kernel.turnStart();
+  assert.equal(await run(f.kernel, bash('b2')), undefined);
+  assert.equal(f.kernel.context().recall.state, 'done');
+});
+test('the operator can release the gate for one goal; nothing the model calls can', async t => {
+  const f = await fixture(t, { config }); f.kernel.turnStart();
+  assert.match((await f.kernel.intent(bash('b1'))).reason, /RECALL_REQUIRED/);
+  f.kernel.recallSkip('operator');
+  assert.equal(await run(f.kernel, bash('b2')), undefined);
+  assert.equal(f.kernel.context().recall.state, 'override');
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'recall.override').length, 1);
+  f.store.mirrorGoal(f.lease, { id: 'goal-2', status: 'active' });
+  assert.match((await f.kernel.intent(bash('b3'))).reason, /RECALL_REQUIRED/, 'the override does not outlive its goal');
+});
 test('advise mode reports recall state without refusing anything', async t => {
   const f = await fixture(t, { config: { ...config, recall: { mode: 'advise', tools: [T.search] } } }); f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('b1')), undefined); assert.equal(f.kernel.context().recall.state, 'pending');

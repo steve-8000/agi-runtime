@@ -73,6 +73,16 @@ export class RuntimeKernel {
     return entry;
   }
   freezeDiscovery() { if (this.discovery.readsBeforeFirstZvec === null) this.discovery.readsBeforeFirstZvec = this.discovery.reads.size; }
+  /**
+   * Operator escape for one goal: the gate is satisfiable only through the recall tools, so a session
+   * that does not have them would otherwise be unable to act at all. A person takes the record, not the
+   * model — nothing the model can call reaches this.
+   */
+  recallSkip(by) {
+    const entry = this.recallEntry();
+    entry.turn = Math.min(entry.turn, this.turn - 1); entry.override = true;
+    this.observe(() => this.store.emit(this.lease.workspace, 'recall.override', { session: this.lease.session, goal: this.goalKey(), by }));
+  }
 
   /**
    * The first effect of a goal runs only after a recall tool settled in an earlier turn: an intent seen
@@ -278,7 +288,8 @@ export class RuntimeKernel {
       uncertainActions: unknown, blockedUntilReconciled: this.enforcing && this.config.blockOnUnknown && workspaceUnknown.length > 0,
       uncertainRemote: unknown.length - workspaceUnknown.length,
       toolCalls: row?.tool_calls ?? 0, effectsUsed: row?.effects_used ?? 0,
-      recall: { mode: this.config.recall.mode, tools: [...this.config.recall.tools], state: !entry ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : 'failed', hits: entry?.hits ?? null },
+      recall: { mode: this.config.recall.mode, tools: [...this.config.recall.tools], hits: entry?.hits ?? null,
+        state: !entry ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : entry.override ? 'override' : 'failed' },
       memory: { task: task?.key ?? null, effectsSinceNote: this.store.effectsSinceMemoryWrite(this.lease.session, this.remoteTools), backend, pending: this.store.pendingOutbox(this.lease.workspace).length },
       search: { index: this.search.index, root: this.root },
       discovery: { zvec: this.discovery.zvec, readsBeforeFirstZvec: this.discovery.readsBeforeFirstZvec ?? this.discovery.reads.size },

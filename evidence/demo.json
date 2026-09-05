@@ -68,7 +68,7 @@
     },
     "checkpoint": {
       "evidenceIds": [
-        "df7a9f02-76f8-4b67-9ceb-18ac4c4fc51f"
+        "74a960da-0565-46cd-a646-30dd653c71ea"
       ],
       "nextAction": "정본 승격",
       "summary": "현재 원문을 확인했다."
@@ -84,8 +84,8 @@
         "mcp__clab_mem_mem_search",
         "mcp__clab_mem_mem_task_read"
       ],
-      "state": "done",
-      "hits": 1
+      "hits": 1,
+      "state": "done"
     },
     "memory": {
       "task": "demo-task",
@@ -95,7 +95,7 @@
     },
     "search": {
       "index": null,
-      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-fATU32/workspace"
+      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-aTsg0z/workspace"
     },
     "discovery": {
       "zvec": 0,

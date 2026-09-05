@@ -65,6 +65,8 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 
 `recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `mem_search`와 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — Utopia가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 자동 해제는 없다: 차단 횟수·시간은 게이트를 풀지 못한다(횟수 기반 해제는 효과 재요청 두 번으로 통과되는 구조적 우회였다). `require`는 운영자의 선언이고, clab-mem이 없는 환경은 `advise`다. epoch이 오른 재개 세션에서 `memoryTask`가 알려져 있으면 그 키의 `mem_task_read`만 통과시킨다. `mem_status`·`mem_read`는 회상이 아니다(telemetry). `hits>0`인 검색 뒤 읽기 없이 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
 
+`write({path:"xd://<tool>"})`는 봉투일 뿐이라 **디스패치되는 도구로** 분류한다(`src/policy.mjs`의 `dispatched`). 봉투를 opaque write로 보면 디스패치된 회상 read가 효과가 되어 recall 게이트가 자기 자신을 막는다. 게이트가 실제 인자를 필요로 하는 검사(메모리 쓰기)는 중첩 호출 쪽에서 돌고, 봉투는 kind만 물려받는다.
+
 티켓 키는 `(toolCallId, toolName)`이다. 라이브에서 확인한 사실: `write({path:"xd://runtime_status"})`는 중첩 디스패치를 만들고, 그 중첩 `tool_call/tool_result`는 **외부 호출과 같은 toolCallId**를 쓰며 자체 `tool_execution_start/end`가 없다. toolCallId만으로 키를 잡으면 외부 행이 `executing`으로 남아 다음 세션에서 거짓 `unknown`이 된다. 회귀 테스트가 있다.
 
 결과 판정: `isError` 또는 `details.exitCode ≠ 0`이면 `failed`(관측된 실패). `unknown`은 **관측이 끊긴 경우**에만 — 프로세스가 하트비트 없이 lapse한 세션의 `executing` 효과. 예외를 무조건 `unknown`으로 두던 이전 규칙은 버렸다: hook 경계에서는 tool의 throw와 `isError` 반환이 구분되지 않고, 테스트 실패(`bash` nonzero)마다 workspace를 얼리는 것은 실용적이지 않다.

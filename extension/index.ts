@@ -191,7 +191,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 
 	// ---- operator commands ---------------------------------------------------------------------
 	pi.registerCommand("runtime", {
-		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|reject <candidate-id>|compat",
+		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|reject <candidate-id>|recall skip|compat",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [command = "status", target, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
@@ -214,6 +214,9 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 					check(row?.workspace === lease!.workspace && ["candidate", "submitted", "unknown"].includes(row.state), "OUTBOX_STATE_CONFLICT");
 					if ((await ctx.ui.select("이 메모리 후보를 폐기합니까?", ["폐기", "취소"])) !== "폐기") return;
 					store!.setOutbox(lease!, target, row.state, "rejected");
+				} else if (command === "recall") {
+					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target === "skip", "USAGE", "/runtime recall skip");
+					k.recallSkip("operator");
 				} else check(command === "status", "UNKNOWN_RUNTIME_COMMAND", `unknown: ${command}`);
 				ctx.ui.notify(JSON.stringify(k.context(), null, 1), "info");
 			} catch (error) { ctx.ui.notify(`/runtime ${command}: ${fault(error)}`, "error"); }

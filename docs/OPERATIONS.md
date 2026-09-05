@@ -86,6 +86,7 @@ cwd가 `$HOME`인 세션은 runtime dir이 workspace 안이므로 `STATE_MUST_BE
 ```text
 runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 내용>", evidenceIds: [] })   # 에이전트
 /runtime reconcile <action-id|all> [evidence-id…]                                                      # 사람
+/runtime recall skip                    # recall 게이트를 이 goal에 한해 해제한다. 세션에 회상 도구가 아예 없을 때만; 이벤트 `recall.override`로 기록되고 모델은 호출할 수 없다
 ```
 
 둘 다 attestation이고 저널에 `by: session`으로 남는다. 자동 재실행은 없다. `unknown`은 범위가 있어서 메모리 쓰기의 불명은 메모리 쓰기만 막고(`uncertainRemote`), working tree 효과는 `blockedUntilReconciled`가 true일 때만 막힌다. 메모리 쓰기의 불명은 같은 `idempotency_key`로 재발행할 수 있고, 서버의 서명 receipt가 검증되면 그 행이 `by: receipt`로 자동으로 닫힌다. `blockOnUnknown:false`로 두면 차단 없이 기록만 남는다.

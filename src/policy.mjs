@@ -10,7 +10,25 @@ const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'm
 const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'runtime_checkpoint', 'runtime_memory_candidate', 'runtime_reconcile']);
 const PATH_EDIT_TOOLS = new Set(['edit', 'ast_edit']);
 
-export function classify(call, config = {}, root) {
+const DEVICE_PATH = /^xd:\/\/([A-Za-z0-9_.:-]+)/;
+/**
+ * A `write` to an `xd://<tool>` path dispatches another tool; the envelope itself touches nothing.
+ * Classifying the envelope as an opaque write would read a dispatched canonical-memory recall as an
+ * effect and gate the very call the recall gate demands. The nested call is journaled and gated under
+ * its own name too, so the semantics live there; the envelope only inherits the kind.
+ */
+function dispatched(call) {
+  if (call.toolName !== 'write' || typeof call.input?.path !== 'string') return null;
+  const device = DEVICE_PATH.exec(call.input.path);
+  if (!device) return null;
+  let input = {};
+  try { const parsed = JSON.parse(call.input.content ?? '{}'); if (parsed && typeof parsed === 'object') input = parsed; } catch { /* the device rejects malformed args */ }
+  return { ...call, toolName: device[1], input };
+}
+
+export function classify(call, config = {}, root, hop = 0) {
+  const device = hop === 0 ? dispatched(call) : null;
+  if (device) return classify(device, config, root, 1);
   const { toolName, input } = call;
   if (toolName === 'write' && root && ordinaryWorkspaceWrite(root, input)) return { kind: 'workspace-write' };
   if (PATH_EDIT_TOOLS.has(toolName) && root && ordinaryWorkspacePath(root, input?.path)) return { kind: 'workspace-write' };

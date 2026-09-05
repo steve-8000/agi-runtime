@@ -28,7 +28,7 @@
       "mode": "enforce",
       "headlessEffects": "allow",
       "blockOnUnknown": true,
-      "recall": "require"
+      "recall": "advise"
     },
     {
       "name": "memory-receipts",
@@ -39,20 +39,20 @@
     {
       "name": "compat-report",
       "status": "ok",
-      "at": "2026-09-05T14:29:40.777Z",
+      "at": "2026-09-05T20:10:56.654Z",
       "contract": 3,
       "missing": [],
       "counters": {
-        "intents": 2,
-        "starts": 2,
-        "results": 2,
-        "ends": 2,
+        "intents": 0,
+        "starts": 0,
+        "results": 0,
+        "ends": 0,
         "unmatchedStarts": 0,
         "unmatchedResults": 0,
         "revisions": 0,
         "rewrites": 0,
         "blocks": 0,
-        "turns": 3
+        "turns": 0
       },
       "attachError": null
     }

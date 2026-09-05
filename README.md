@@ -90,6 +90,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 /runtime status
 /runtime pause | resume
 /runtime reconcile <action-id|all> [evidence-id…]     # 사람의 확인 기록. 자동 재실행 없음
+/runtime recall skip                                  # 회상 도구가 없는 세션을 위한 운영자 1회 해제(goal 단위)
 /runtime reject <candidate-id>
 /runtime compat
 ```
