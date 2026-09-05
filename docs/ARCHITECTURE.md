@@ -139,7 +139,9 @@ zvec에는 code/workspace 문서만. 정본 기록을 다시 색인하지 않는
 | 구조적 계약 위반 시 runtime 비활성(도구는 동작) | fail closed | 업데이트 후 OMP 불능도 "풀림". `OMP_RUNTIME_REQUIRED=1`로 fail closed 선택 가능 |
 | `memoryReadTools` 사전 채움 | 빈 배열 | 서버 소스와 실행 중 라우트에서 이름·읽기 여부 확인 |
 | 회상 게이트를 turn 기준 settle로 | intent 관측 1건 | 병렬 tool call은 실행 전에 모두 intent를 지나고, 같은 메시지의 효과는 회상 결과를 읽지 않은 결정이다 |
-| 횟수 기반 해제 없음 | N회 차단 후 advise로 강등 | 효과 재요청 두 번이면 통과되는 구조적 우회. 부재는 관측 불가하므로 config가 선언한다 |
+| 회상 게이트는 3회 거절 후 스스로 열림 | 사람이 `/runtime recall skip` | 도구 부재는 사전 관측이 불가능하고(OMP에 세션 도구 목록 API 없음) 사람 개입을 요구하면 자율 실행이 멈춘다. 시도의 실패와 반복 거절은 관측 가능하므로 그것으로 강등한다 |
+| 저널 쓰기 실패는 관측으로 강등 | 효과 차단(fail closed) | 원장이 깨진 것은 작업을 멈출 이유가 아니다. 차단하면 세션 재시작 외에 풀 방법이 없었다. `journal.degraded` 이벤트와 상태로 노출한다 |
+| `OMP_RUNTIME_REQUIRED=1`은 호스트 계약 위반에만 fail closed | attach 실패 전체 | 운영자 config의 낡은 키나 다른 세션이 쥔 writer lease는 호스트 계약이 아니다. 그걸로 모든 도구를 막으면 자율 실행이 사람 손을 요구한다 |
 | 쓰기 오류는 전부 `unknown` | 결과 텍스트로 `failed` 강등 | 텍스트는 middleware가 바꿀 수 있고 중복 기록은 지우기 어렵다. 강등할 근거가 없다 |
 | 모델이 전송, 런타임은 검증 | 런타임이 소유한 전송 계층 | `invokeTool`은 same-tool 위임뿐이다. 둘째 클라이언트는 이중 구현 |
 | `agent_end` 알림만 | `session_stop` continue | 둘째 자율 루프 금지(`AGENTS.runtime.md`). 사용자가 continuation 권한자 |

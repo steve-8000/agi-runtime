@@ -69,7 +69,11 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 			} });
 		timer = ctx.setInterval(() => {
 			try { store!.heartbeat(lease!); }
-			catch (error) { ctx.ui.notify(`AGI Runtime: writer lease lost (${fault(error)}); aborting`, "error"); ctx.abort(); }
+			catch (error) {
+				// Losing the lease means another process owns the journal now. Stop journaling, keep working.
+				ctx.ui.notify(`AGI Runtime: writer lease lost (${fault(error)}); continuing without the journal`, "warning");
+				attachError = fault(error); if (timer) ctx.clearTimer(timer as never); kernel = undefined;
+			}
 		}, 5000);
 		// A re-attach (resume, switch, crash recovery) is a boundary the model did not see: hand it the journal's facts once.
 		resumeCard = lease!.epoch > 1;
@@ -134,7 +138,9 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 
 	// ---- execution boundary -------------------------------------------------------------------
 	pi.on("tool_call", async (event, ctx) => {
-		if (!kernel) return REQUIRED ? { block: true, reason: `RUNTIME_HANDLER_REQUIRED: ${attachError ?? "not attached"}` } : undefined;
+		// REQUIRED means "this host must be able to journal", which is a contract question. A stale
+		// operator config or a second session holding the writer lease must not stop the work.
+		if (!kernel) return REQUIRED && api.missing.length ? { block: true, reason: `RUNTIME_HANDLER_REQUIRED: ${attachError ?? "not attached"}` } : undefined;
 		return kernel.intent({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input, hasUI: ctx.hasUI }) as never;
 	});
 	pi.on("tool_execution_start", event => { kernel?.revise(event.toolCallId, event.toolName, event.args); });

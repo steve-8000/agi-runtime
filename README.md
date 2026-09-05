@@ -74,7 +74,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 }
 ```
 
-`recall.mode: require`는 운영자의 선언("이 환경에는 정본 메모리가 붙어 있다")이다. 차단 횟수나 시간이 게이트를 풀지 않는다 — 풀 수 있는 것은 settle된 회상, 그리고 운영자의 `/runtime recall skip`(goal 하나)뿐이다. 메모리 도구가 없는 환경은 첫 효과에서 즉시 `RECALL_REQUIRED`가 보이므로 `advise`로 바꾼다.
+`recall.mode: require`는 운영자의 선언("이 환경에는 정본 메모리가 붙어 있다")이지만 **막다른 길이 될 수 없다**. 게이트는 세 가지로 스스로 열린다: settle된 회상, 회상 시도의 실패(도구 미등록·백엔드 무응답 → `recall.unavailable`), 그리고 같은 goal에서 회상이 settle되지 않은 채 3회 거절(`recall.forced`). 어느 경우든 상태와 저널에 왜 열렸는지 남는다. `/runtime recall skip`은 운영자용 최후 수단이며 정상 경로가 아니다.
 
 `headlessEffects: allow`가 기본인 이유: AGENTS.md의 headless fail-closed 조항은 **Kubernetes 변경** 한정이고 그 경계는 이미 `kubernetes-approval.ts`가 강제한다. 서브에이전트는 확장을 로드하지 않으므로 이 옵션이 실제로 닿는 경로는 사용자가 직접 실행하는 `omp -p`뿐이며, `deny`는 그 경로를 읽기 전용으로 만든다. 더 보수적으로 가려면 한 줄을 바꾸면 된다. 이 결정에는 advisor의 이견이 있었다(`docs/ARCHITECTURE.md` §7).
 
@@ -95,12 +95,12 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 ## 검증
 
 ```sh
-node --experimental-strip-types --test tests/*.test.mjs   # 78 tests
+node --experimental-strip-types --test tests/*.test.mjs   # 81 tests
 node scripts/check.mjs                                    # JS syntax + tsc (types/pi-coding-agent.d.ts 기준)
 node scripts/demo.mjs                                     # offline: recall gate → uncertain write → read-back attestation
 ```
 
-`docs/VERIFICATION.md`와 `evidence/`가 실제 수행 결과다. OMP 18.1.10 바이너리에서 `-e` 명시 로드와 auto-discovery 두 경로로 라이브 검증했고, 라이브에서만 드러난 결함(중첩 `xd://` 디스패치가 외부 호출과 같은 `toolCallId`를 공유) 하나를 고쳐 회귀 테스트로 남겼다.
+`docs/VERIFICATION.md`와 `evidence/`가 실제 수행 결과다. OMP 18.1.10·18.1.11 바이너리에서 `-e` 명시 로드와 auto-discovery 두 경로로 라이브 검증했고, 라이브에서만 드러난 결함(중첩 `xd://` 디스패치가 외부 호출과 같은 `toolCallId`를 공유) 하나를 고쳐 회귀 테스트로 남겼다.
 
 ## 아직 아닌 것
 

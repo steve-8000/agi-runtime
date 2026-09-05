@@ -90,13 +90,23 @@ runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 �
 
 ### 6.1.1 회상 게이트에 막힘
 
-`RECALL_REQUIRED`는 이 goal에서 아직 회상 도구가 이전 turn에 settle되지 않았다는 뜻이다. `recall`/`entity`/`context_pack`을 부르고 **다음 메시지**에서 효과를 다시 낸다. 같은 메시지에 병렬로 낸 효과는 항상 거절된다. 메모리 도구가 없는 환경이면 `recall.mode`를 `advise`로, 한 goal만 열려면 `/runtime recall skip` — 게이트는 횟수로 풀리지 않는다.
+`RECALL_REQUIRED`는 이 goal에서 아직 회상 도구가 이전 turn에 settle되지 않았다는 뜻이다. `recall`/`entity`/`context_pack`을 부르고 **다음 메시지**에서 효과를 다시 낸다. 같은 메시지에 병렬로 낸 효과는 항상 거절된다.
+
+게이트는 막다른 길이 되지 않는다 — 사람 개입 없이 세 경로로 열린다:
+
+| 경로 | 조건 | 상태 / 저널 |
+|---|---|---|
+| settle된 회상 | 이전 turn에 회상이 마감 | `recall.state: done` |
+| 시도의 실패 | 도구 미등록(`No such tool`)·백엔드 무응답으로 회상이 `failed` | `unavailable` / `recall.unavailable` |
+| 반복 거절 | 같은 goal에서 회상 settle 없이 3회 거절 | `forced` / `recall.forced` |
+
+`/runtime recall skip`은 운영자 override(goal 하나)로 남아 있지만 정상 경로가 아니다. 도구가 상시 없는 환경은 `recall.mode: advise`가 맞다.
 
 ### 6.1.2 메모리 쓰기가 막힘
 
 | 코드 | 뜻 | 조치 |
 |---|---|---|
-| `MEMORY_BACKEND_DEGRADED` | 직전 메모리 호출이 실패/불명 | `recall`/`entity`를 한 번 성공시킨 뒤 다시 |
+| `MEMORY_BACKEND_DEGRADED` | 직전 메모리 호출의 결과가 **불명** | 기록을 읽어 확인(`recall`/`entity`)한 뒤 다시. 실패(확정)는 막지 않는다 — 재시도가 blind가 아니므로 |
 | `MEMORY_SECRET` | 입력에 자격증명 패턴 | 값을 빼고 다시. 서버 redact는 안전망이지 허가가 아니다 |
 | `STALE_EVIDENCE` | 인용한 evidence의 파일이 바뀜 | `runtime_evidence`로 다시 받아 인용 |
 | `RECONCILIATION_REQUIRED` (메모리) | 불명인 메모리 쓰기가 있음 | `recall`/`entity`로 실제 기록을 확인한 뒤 `runtime_reconcile` |
@@ -107,7 +117,7 @@ runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 �
 
 ### 6.3 저널 손상·디스크
 
-실행 후 저널 쓰기가 실패하면 `RUNTIME_JOURNAL_POISONED`로 이후 효과를 차단한다(enforce). 세션 재시작으로 풀린다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·사용량이 사라진다. 알려진 이전 스키마(v2·v3)는 열 때 전진 마이그레이션한다(후보 큐 테이블을 버리고 `user_version=4`). 행위 저널은 그대로 남는다. 그 밖의 스키마는 `UNSUPPORTED_SCHEMA`로 거절한다 — 파일을 옮기고 새로 시작한다.
+실행 후 저널 쓰기가 실패하면 그 세션은 **관측으로 강등**된다: 효과는 계속 실행되고, `journal.degraded` 이벤트 한 건과 `/runtime status`의 `poisoned: true`로 원장이 불완전하다는 사실만 남는다(차단하지 않는다 — 예전에는 세션 재시작이 유일한 해제였다). 이후 기록은 신뢰할 수 없으니 그 세션의 완료 보고에 명시한다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·사용량이 사라진다. 알려진 이전 스키마(v2·v3)는 열 때 전진 마이그레이션한다(후보 큐 테이블을 버리고 `user_version=4`). 행위 저널은 그대로 남는다. 그 밖의 스키마는 `UNSUPPORTED_SCHEMA`로 거절한다 — 파일을 옮기고 새로 시작한다.
 
 ### 6.4 lease
 

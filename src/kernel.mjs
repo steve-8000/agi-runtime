@@ -1,10 +1,12 @@
 import { realpathSync } from 'node:fs';
 import { check, digest, RuntimeFault, rejectObviousSecrets } from './util.mjs';
 import { runtimeConfig } from './config.mjs';
-import { classify, decision, approvalHash, isEffect } from './policy.mjs';
+import { classify, decision, approvalHash, dispatched, isEffect } from './policy.mjs';
 import { sensitiveRead } from './workspace-write.mjs';
 import { evidenceIsCurrent, citedEvidence } from './memory.mjs';
 
+/** Refusals of one goal, with no recall settling in between, after which the gate opens itself. */
+const RECALL_STRIKES = 3;
 const SETTLED_RETENTION_MS = 60000;
 const BLOCKED_RETENTION = 512;
 const ZVEC = 'mcp__zvec_grep_search';
@@ -92,8 +94,17 @@ export class RuntimeKernel {
   recallGate() {
     if (this.config.recall.mode !== 'require') return;
     const tools = this.config.recall.tools.join('|');
-    const entry = this.recall.get(this.goalKey());
-    check(entry && entry.turn < this.turn, 'RECALL_REQUIRED', entry ? `recall settles this turn; read it and re-issue the effect in your next message` : `call ${tools} and read the result before the first effect of this goal`);
+    const entry = this.recallEntry();
+    if (entry.turn >= this.turn) {
+      // The procedure is one extra message, never a dead end: a session that cannot recall (no tool,
+      // no backend, no answer) opens the gate itself and records that it did.
+      entry.strikes = (entry.strikes ?? 0) + 1;
+      if (entry.strikes >= RECALL_STRIKES) {
+        entry.turn = Math.min(entry.turn, this.turn - 1); entry.forced = true;
+        this.observe(() => this.store.emit(this.lease.workspace, 'recall.forced', { session: this.lease.session, goal: this.goalKey(), strikes: entry.strikes }));
+      }
+    }
+    check(entry.turn < this.turn, 'RECALL_REQUIRED', entry.turn === Infinity ? `call ${tools} and read the result before the first effect of this goal` : `recall settles this turn; read it and re-issue the effect in your next message`);
     if (!entry.shallowChecked) {
       entry.shallowChecked = true;
       if ((entry.hits ?? 0) > 0 && entry.reads === 0) this.observe(() => this.store.emit(this.lease.workspace, 'recall.shallow', { session: this.lease.session, hits: entry.hits }));
@@ -106,8 +117,10 @@ export class RuntimeKernel {
     // A fact need not cite a file range; one that does must cite the file as it is now.
     if (cited.length) evidenceIsCurrent(this.store, this.lease.workspace, this.root, cited);
     else this.observe(() => this.store.emit(this.lease.workspace, 'memory.unverified', { toolCallId, tool: toolName }));
+    // Only an unknown outcome holds the next write: re-sending then could duplicate a record that
+    // already landed. A failed call is a settled fact, so retrying it is not a blind retry.
     const last = this.store.lastOutcome(this.lease.session, this.memoryTools);
-    check(last !== 'failed' && last !== 'unknown', 'MEMORY_BACKEND_DEGRADED', 'the last canonical-memory call did not succeed; verify the backend with a status read before writing');
+    check(last !== 'unknown', 'MEMORY_BACKEND_DEGRADED', 'the last canonical-memory call has an unknown outcome; read the record back before writing again');
   }
 
   /** Returns a tool_call result: `{block, reason}` or undefined. The runtime never rewrites a tool's input. */
@@ -117,15 +130,24 @@ export class RuntimeKernel {
     // A nested xd:// device dispatch reuses the outer toolCallId with a different toolName, so both key the ticket.
     const key = ticketKey(toolCallId, toolName);
     try {
-      if (this.poison && this.enforcing) throw new RuntimeFault('RUNTIME_JOURNAL_POISONED', `journal write failed earlier: ${this.poison.message}`);
+      // A journal that cannot be written is a broken ledger, not a reason to stop the work: the
+      // session degrades to observation and says so. Blocking here used to need a restart to clear.
+      if (this.poison && this.enforcing && !this.poisonReported) {
+        this.poisonReported = true;
+        this.observe(() => this.store.emit(this.lease.workspace, 'journal.degraded', { session: this.lease.session, message: String(this.poison?.message ?? '') }));
+      }
       this.store.assertLease(this.lease);
       const op = classify(call, this.config, this.root);
       const policy = decision(call, op, this.config);
       check(policy.allow, policy.reason ?? 'DENIED');
       const effect = isEffect(op);
       // An xd:// envelope carries the semantics of what it dispatches: the canonical-memory gates and
-      // the unknown scope must follow that name, not the envelope's.
-      const effective = op.dispatchedTo ?? toolName;
+      // the unknown scope and the pre-send checks must follow that call, not the envelope's.
+      const dispatch = dispatched(call);
+      const effective = dispatch?.toolName ?? toolName;
+      // The gates read the arguments that will run. The journal keeps the envelope's own input, so the
+      // revise comparison still measures what OMP actually executed.
+      const effectiveInput = dispatch ? dispatch.input : input;
       if (effect) check(!this.paused, 'RUNTIME_PAUSED', '/runtime resume 후 계속하십시오');
       if (toolName === 'read' && sensitiveRead(this.root, input?.path)) this.store.emit(this.lease.workspace, 'read.sensitive', { toolCallId, path: input.path });
       if (toolName === 'read' && this.discovery.readsBeforeFirstZvec === null && typeof input?.path === 'string') this.discovery.reads.add(input.path);
@@ -134,7 +156,7 @@ export class RuntimeKernel {
         const flags = SCOPE_FLAGS.filter(flag => input?.[flag] === true);
         if (flags.length) this.store.emit(this.lease.workspace, 'search.scope', { toolCallId, flags });
       }
-      if (this.remoteTools.includes(effective)) this.memoryWriteGate({ ...call, toolName: effective });
+      if (this.remoteTools.includes(effective)) this.memoryWriteGate({ toolCallId, toolName: effective, input: effectiveInput });
       if (effect && this.enforcing) this.recallGate();
       if (effect) this.freezeDiscovery();
       if (policy.requiresApproval) {
@@ -152,7 +174,7 @@ export class RuntimeKernel {
       // effects-since-write) sees a dispatched canonical-memory write as one. The action id keeps the
       // envelope's own name, so the nested call's row stays distinct.
       this.journal(() => this.store.beginAction(this.lease, { actionId, tool: effective, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools }));
-      this.pending.set(key, { actionId, toolName, effective, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
+      this.pending.set(key, { actionId, toolName, effective, effectiveInput, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
       return undefined;
     } catch (error) {
       if (error instanceof RuntimeFault) return this.block(key, `${error.code}: ${error.message}`);
@@ -198,20 +220,28 @@ export class RuntimeKernel {
     const uncertain = remote && (ticket.revised === true || !ok);
     ticket.settledAt = this.store.now() || 1; ticket.isError = !!isError;
     this.journal(() => this.store.finishAction(this.lease, ticket.actionId, { ok, uncertain, outcome: { isError: !!isError, exitCode: typeof exit === 'number' ? exit : null, contentHash: digest(result?.content ?? null) } }));
-    if (this.config.memoryReadTools.includes(toolName)) this.observe(() => this.observeRecall(ticket, result, ok));
-    if (toolName === ZVEC) this.observe(() => { const m = /^freshness:\s*(\S+)/.exec(firstLine(result)); if (m) this.search.index = m[1]; });
+    const eff = ticket.effective ?? toolName;
+    if (this.config.memoryReadTools.includes(eff)) this.observe(() => this.observeRecall(ticket, result, ok));
+    if (eff === ZVEC) this.observe(() => { const m = /^freshness:\s*(\S+)/.exec(firstLine(result)); if (m) this.search.index = m[1]; });
     if (remote) this.observeMemoryWrite(ticket, { uncertain });
     if (phase === 'end') this.pending.delete(key);
   }
   observeRecall(ticket, result, ok) {
     const entry = this.recallEntry();
-    if (this.config.recall.tools.includes(ticket.toolName)) {
-      entry.turn = Math.min(entry.turn, this.turn); entry.ok = entry.ok || ok;
+    const tool = ticket.effective ?? ticket.toolName;
+    if (this.config.recall.tools.includes(tool)) {
+      entry.turn = Math.min(entry.turn, this.turn); entry.ok = entry.ok || ok; entry.strikes = 0;
       const total = /"total"\s*:\s*(\d+)/.exec(firstLine(result));
       if (total) entry.hits = Number(total[1]);
+      // A session whose recall tool is not even mounted must not be able to deadlock: the attempt is
+      // the observation, and the state says the gate opened without an answer.
+      if (!ok && /no such tool/i.test(firstLine(result))) {
+        entry.unavailable = true;
+        this.observe(() => this.store.emit(this.lease.workspace, 'recall.unavailable', { session: this.lease.session, tool }));
+      }
     }
     // A recall that named one entity is a read of it; a bare query is a survey of the corpus.
-    if (ok && typeof ticket.input?.entity === 'string') entry.reads++;
+    if (ok && typeof (ticket.effectiveInput ?? ticket.input)?.entity === 'string') entry.reads++;
   }
   /** An uncertain canonical-memory write is journaled so any later session can close it by read-back. */
   observeMemoryWrite({ actionId, toolName }, { uncertain }) {
@@ -233,7 +263,7 @@ export class RuntimeKernel {
       uncertainRemote: unknown.length - workspaceUnknown.length,
       toolCalls: row?.tool_calls ?? 0, effectsUsed: row?.effects_used ?? 0,
       recall: { mode: this.config.recall.mode, tools: [...this.config.recall.tools], hits: entry?.hits ?? null,
-        state: !entry ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : entry.override ? 'override' : 'failed' },
+        state: !entry || entry.turn === Infinity ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : entry.unavailable ? 'unavailable' : entry.forced ? 'forced' : entry.override ? 'override' : 'failed' },
       memory: { effectsSinceNote: this.store.effectsSinceMemoryWrite(this.lease.session, this.remoteTools), backend },
       search: { index: this.search.index, root: this.root },
       discovery: { zvec: this.discovery.zvec, readsBeforeFirstZvec: this.discovery.readsBeforeFirstZvec ?? this.discovery.reads.size },

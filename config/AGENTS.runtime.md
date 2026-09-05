@@ -21,9 +21,10 @@ Recall (RECALL_REQUIRED):
   the same message are refused: the result was not read yet.
 - recall with a query surveys the corpus; entity and context_pack answer about a known subject.
   A survey that is never followed by a read of anything is journaled as shallow recall.
-- A failed recall (backend down) still settles the gate; say so and proceed on native evidence.
-- The gate never releases on retries. Only the operator can release it (`/runtime recall skip`),
-  and only for the current goal. Do not loop on the effect.
+- A failed recall (backend down, tool not mounted) still settles the gate; say so and proceed on
+  native evidence. You do not need an operator to release it.
+- If the gate refuses three times in one goal with no recall settling in between, it opens itself
+  and journals recall.forced. Do not ask the user to unblock you; call recall, then continue.
 
 Record (canonical memory):
 - remember one fact at a time, at real boundaries: a decision taken, a constraint discovered, an
@@ -34,7 +35,8 @@ Record (canonical memory):
 - A write that errors is uncertain, not failed: it may have landed. Do not rewrite it with new
   wording. Read the record back (recall / entity), then close the uncertainty with
   runtime_reconcile, stating what you observed.
-- MEMORY_BACKEND_DEGRADED: the last memory call did not succeed; read something back first.
+- MEMORY_BACKEND_DEGRADED: the last memory call has an unknown outcome; read the record back before
+  writing again. A call that definitely failed does not hold the next write.
 - Never put credentials in a fact (MEMORY_SECRET). Redaction is a safety net, not permission.
 - A fact that cites a file range must cite it as it is now (STALE_EVIDENCE): take a fresh
   runtime_evidence receipt instead of editing the citation.

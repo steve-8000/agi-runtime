@@ -17,7 +17,7 @@ const DEVICE_PATH = /^xd:\/\/([A-Za-z0-9_.:-]+)/;
  * effect and gate the very call the recall gate demands. The nested call is journaled and gated under
  * its own name too, so the semantics live there; the envelope only inherits the kind.
  */
-function dispatched(call) {
+export function dispatched(call) {
   if (call.toolName !== 'write' || typeof call.input?.path !== 'string') return null;
   const device = DEVICE_PATH.exec(call.input.path);
   if (!device) return null;

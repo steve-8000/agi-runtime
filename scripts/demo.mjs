@@ -54,6 +54,12 @@ try {
   store.checkpoint(lease, { summary: '현재 원문을 확인했다.', nextAction: '사실 기록', evidenceIds: [evidenceId] });
   writeFileSync(join(root, 'architecture.md'), 'gbrain is canonical memory.\nchanged.\n');
   await call(T.remember, { fact: `근거 ${evidenceId}`, provenance: 'demo' });            // refused: the cited file changed
-  console.log(JSON.stringify({ mode: 'offline-mock-demo', modelCalled: false, remoteContacted: false, steps, runtime: kernel.context() }, null, 2));
+  // A goal whose environment cannot recall: the gate opens itself rather than waiting for a human.
+  store.mirrorGoal(lease, { id: 'native-goal-stranded', objective: '회상 백엔드가 없는 환경', status: 'active' });
+  for (let i = 0; i < 2; i++) { kernel.turnStart(); await call('bash', { command: 'printf stranded' }); }
+  kernel.turnStart();
+  await call('bash', { command: 'printf stranded' });                                  // runs: recall.forced
+  const opened = store.events(workspace.id).filter(e => e.kind === 'recall.forced' || e.kind === 'recall.unavailable').map(e => e.kind);
+  console.log(JSON.stringify({ mode: 'offline-mock-demo', modelCalled: false, remoteContacted: false, steps, gateOpenedBy: opened, runtime: kernel.context() }, null, 2));
   store.release(lease);
 } finally { store.close(); rmSync(base, { recursive: true, force: true }); }

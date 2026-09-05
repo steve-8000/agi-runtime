@@ -36,12 +36,32 @@ test('a failed recall settles the gate; a canonical-memory read outside recall.t
   assert.equal(await run(f.kernel, bash('b2')), undefined, 'an unreachable backend does not stop work');
   assert.equal(f.kernel.context().recall.state, 'failed');
 });
-test('no number of refused effects releases the gate; only a settled recall does', async t => {
+test('a goal that cannot recall opens the gate itself after three refusals, and says so', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  for (let i = 0; i < 10; i++) { assert.match((await f.kernel.intent(bash(`b${i}`))).reason, /RECALL_REQUIRED/); f.kernel.turnStart(); }
-  assert.equal(f.kernel.context().recall.state, 'pending'); assert.equal(f.kernel.context().effectsUsed, 0);
-  await run(f.kernel, mem('p1', T.pack, { entities: 'concepts/x' })); f.kernel.turnStart();
-  assert.equal(await run(f.kernel, bash('ok')), undefined);
+  for (let i = 0; i < 2; i++) { assert.match((await f.kernel.intent(bash(`b${i}`))).reason, /RECALL_REQUIRED/); f.kernel.turnStart(); }
+  assert.equal(f.kernel.context().recall.state, 'pending');
+  assert.equal(await run(f.kernel, bash('b3')), undefined, 'the third attempt runs: the procedure is never a dead end');
+  assert.equal(f.kernel.context().recall.state, 'forced');
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'recall.forced').length, 1);
+});
+test('a settled recall resets the strikes, so the gate keeps asking on the next goal', async t => {
+  const f = await fixture(t, { config }); f.kernel.turnStart();
+  assert.match((await f.kernel.intent(bash('b0'))).reason, /RECALL_REQUIRED/);
+  await run(f.kernel, mem('q1', T.recall)); f.kernel.turnStart();
+  assert.equal(await run(f.kernel, bash('b1')), undefined);
+  assert.equal(f.kernel.context().recall.state, 'done');
+  f.store.mirrorGoal(f.lease, { id: 'goal-2', status: 'active' });
+  assert.match((await f.kernel.intent(bash('b2'))).reason, /RECALL_REQUIRED/, 'the new goal starts with a fresh count');
+});
+test('a recall tool the session does not have opens the gate on the attempt itself', async t => {
+  const f = await fixture(t, { config }); f.kernel.turnStart();
+  const wrapper = call({ toolCallId: 'w1', toolName: 'write', input: { path: `xd://${T.recall}`, content: JSON.stringify({ query: 'q' }) } });
+  await run(f.kernel, wrapper, { isError: true, text: `No such tool: xd://${T.recall}. Mounted devices: lsp` });
+  assert.equal(f.kernel.context().recall.state, 'settling');
+  f.kernel.turnStart();
+  assert.equal(await run(f.kernel, bash('b1')), undefined, 'the environment answered: there is no such tool');
+  assert.equal(f.kernel.context().recall.state, 'unavailable');
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'recall.unavailable').length, 1);
 });
 test('a new goal requires its own recall', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();

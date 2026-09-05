@@ -103,3 +103,11 @@ test('a credential inside an xd:// envelope is refused before the device runs', 
   const envelope = call({ toolCallId: 'x2', toolName: 'write', input: { path: `xd://${T.remember}`, content: JSON.stringify({ fact: 'token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', provenance: 'chat' }) } });
   assert.match((await f.kernel.intent(envelope)).reason, /MEMORY_SECRET/);
 });
+
+test('a failed memory read does not lock the session out of writing; an unknown write still does', async t => {
+  const f = await fixture(t, { config: config() });
+  await run(f.kernel, call({ toolCallId: 'r1', toolName: T.recall, input: { query: 'q' } }), { isError: true });
+  assert.equal(await run(f.kernel, write('w1', { fact: 'a', provenance: 'chat' })), undefined, 'a backend that cannot answer a read is not a reason to drop the record');
+  await run(f.kernel, write('w2', { fact: 'b', provenance: 'chat' }), { isError: true });
+  assert.match((await f.kernel.intent(write('w3', { fact: 'c', provenance: 'chat' }))).reason, /MEMORY_BACKEND_DEGRADED|RECONCILIATION_REQUIRED/, 'an unknown write must be read back first');
+});

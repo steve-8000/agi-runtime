@@ -20,7 +20,7 @@
   },
   "live": {
     "verdict": "ok",
-    "ompVersion": "18.1.10",
+    "ompVersion": "18.1.11",
     "exitCode": 0,
     "stdoutTail": [
       "done"
@@ -30,9 +30,9 @@
     ],
     "report": {
       "contract": 3,
-      "at": "2026-09-05T21:49:21.113Z",
+      "at": "2026-09-05T22:38:27.082Z",
       "verdict": "ok",
-      "version": "18.1.10",
+      "version": "18.1.11",
       "api": {
         "present": [
           "on",

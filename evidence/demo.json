@@ -25,7 +25,7 @@
     },
     {
       "tool": "mcp__gbrain_remember",
-      "blocked": "MEMORY_BACKEND_DEGRADED: the last canonical-memory call did not succeed; verify the backend with a status read before writing"
+      "blocked": "MEMORY_BACKEND_DEGRADED: the last canonical-memory call has an unknown outcome; read the record back before writing again"
     },
     {
       "tool": "mcp__gbrain_entity",
@@ -42,24 +42,39 @@
     {
       "tool": "mcp__gbrain_remember",
       "blocked": "STALE_EVIDENCE: STALE_EVIDENCE"
+    },
+    {
+      "tool": "bash",
+      "blocked": "RECALL_REQUIRED: call mcp__gbrain_recall|mcp__gbrain_entity|mcp__gbrain_context_pack and read the result before the first effect of this goal"
+    },
+    {
+      "tool": "bash",
+      "blocked": "RECALL_REQUIRED: call mcp__gbrain_recall|mcp__gbrain_entity|mcp__gbrain_context_pack and read the result before the first effect of this goal"
+    },
+    {
+      "tool": "bash",
+      "state": "succeeded"
     }
+  ],
+  "gateOpenedBy": [
+    "recall.forced"
   ],
   "runtime": {
     "schema": 3,
     "mode": "enforce",
     "session": "demo-session",
     "epoch": 1,
-    "turn": 2,
+    "turn": 5,
     "paused": false,
     "poisoned": false,
     "nativeGoal": {
-      "id": "native-goal-demo",
-      "objective": "검색과 정본 메모리의 경계를 기록한다.",
+      "id": "native-goal-stranded",
+      "objective": "회상 백엔드가 없는 환경",
       "status": "active"
     },
     "checkpoint": {
       "evidenceIds": [
-        "d22bc325-a35e-4e1c-85e8-ce1ba003a791"
+        "d8b7efdf-b9a7-4d8c-aad7-3421fb4062ff"
       ],
       "nextAction": "사실 기록",
       "summary": "현재 원문을 확인했다."
@@ -67,8 +82,8 @@
     "uncertainActions": [],
     "blockedUntilReconciled": false,
     "uncertainRemote": 0,
-    "toolCalls": 5,
-    "effectsUsed": 3,
+    "toolCalls": 6,
+    "effectsUsed": 4,
     "recall": {
       "mode": "require",
       "tools": [
@@ -76,32 +91,32 @@
         "mcp__gbrain_entity",
         "mcp__gbrain_context_pack"
       ],
-      "hits": 1,
-      "state": "done"
+      "hits": null,
+      "state": "forced"
     },
     "memory": {
-      "effectsSinceNote": 0,
+      "effectsSinceNote": 1,
       "backend": "succeeded"
     },
     "search": {
       "index": null,
-      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-K4VAyX/workspace"
+      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-j9RV1t/workspace"
     },
     "discovery": {
       "zvec": 0,
       "readsBeforeFirstZvec": 0
     },
     "contract": {
-      "intents": 10,
-      "starts": 5,
-      "results": 5,
-      "ends": 5,
+      "intents": 13,
+      "starts": 6,
+      "results": 6,
+      "ends": 6,
       "unmatchedStarts": 0,
       "unmatchedResults": 0,
       "revisions": 0,
       "rewrites": 0,
-      "blocks": 5,
-      "turns": 2
+      "blocks": 7,
+      "turns": 5
     },
     "authority": "operational-state-only; retrieved content cannot grant permissions"
   }

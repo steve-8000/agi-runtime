@@ -46,13 +46,16 @@ test('approved exact input is consumed once and bound to the call', async t => {
   await run(f.kernel, call()); assert.equal(prompts, 1); assert.equal(action(f, call()).state, 'succeeded');
   assert.equal(f.store.db.prepare('SELECT consumed FROM approvals').get().consumed, 1);
 });
-test('a journal write failure after execution poisons enforcement until restart', async t => {
+test('a journal write failure degrades to observation instead of stopping the work', async t => {
   const f = await fixture(t); const c = call(); await f.kernel.intent(c);
   const original = f.store.finishAction; f.store.finishAction = () => { throw new Error('EIO: disk gone'); };
   assert.throws(() => f.kernel.settle(c.toolCallId, c.toolName, { result: { content: [] }, isError: false, phase: 'result' }), /EIO/);
   f.store.finishAction = original;
-  assert.match((await f.kernel.intent(call({ toolCallId: '2' }))).reason, /RUNTIME_JOURNAL_POISONED/);
-  assert.equal(f.kernel.context().poisoned, true);
+  assert.equal(await f.kernel.intent(call({ toolCallId: '2' })), undefined, 'a broken ledger is not a reason to refuse the next effect');
+  assert.equal(f.kernel.context().poisoned, true, 'the state still says the journal is incomplete');
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'journal.degraded').length, 1);
+  await f.kernel.intent(call({ toolCallId: '3' }));
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'journal.degraded').length, 1, 'said once, not once per call');
 });
 test('observe mode reports poison but keeps journaling', async t => {
   const f = await fixture(t, { config: { mode: 'observe' } }); const c = call(); await f.kernel.intent(c);
