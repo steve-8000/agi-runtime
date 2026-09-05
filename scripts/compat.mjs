@@ -46,7 +46,11 @@ async function liveRun() {
   const prompt = 'Use the read tool on README.md, then run the bash command `printf compat-ok`, then reply with exactly one word: done.';
   // OMP_COMPAT_MODEL selects a cheaper model for the probe; the extension path is identical either way.
   const args = ['-p', '--no-session', '--no-title', '--cwd', root, ...(process.env.OMP_COMPAT_MODEL ? ['--model', process.env.OMP_COMPAT_MODEL, '--thinking', 'low'] : []), prompt];
-  const run = spawnSync('omp', args, { encoding: 'utf8', timeout: 180000, env: { ...process.env, OMP_RUNTIME_REQUIRED: '1' } });
+  // The probe checks the event contract, not the operator's policy: a recall requirement would refuse the bash step.
+  const probeConfig = join(root, '..', `${root.split('/').pop()}-config.json`);
+  writeFileSync(probeConfig, JSON.stringify({ mode: 'enforce' }));
+  const run = spawnSync('omp', args, { encoding: 'utf8', timeout: 180000, env: { ...process.env, OMP_RUNTIME_REQUIRED: '1', OMP_RUNTIME_CONFIG: probeConfig } });
+  rmSync(probeConfig, { force: true });
   const reportPath = join(layout.compat, `${version}.json`);
   const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, 'utf8')) : null;
   let actions = [];

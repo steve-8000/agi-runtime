@@ -36,7 +36,9 @@ async function harness(t, { hasUI = true, omit = [], config, required = false } 
 
 test('loads with the tested contract, journals a full tool cycle, and reports compat ok', async t => {
   const h = await harness(t);
-  assert.equal(h.pi.label, 'AGI Runtime'); assert.equal(h.tools.size, 4); assert.ok(h.commands.has('runtime'));
+  assert.equal(h.pi.label, 'AGI Runtime'); assert.equal(h.tools.size, 5); assert.ok(h.commands.has('runtime'));
+  for (const event of ['turn_start', 'agent_end', 'session_compact', 'auto_compaction_end']) assert.ok(h.handlers.has(event), event);
+  assert.equal(h.handlers.has('session_stop'), false, 'the runtime never continues or blocks a stop');
   await h.handlers.get('session_start')({}, h.ctx);
   assert.equal(existsSync(h.journal()), true, 'journal created under runtime dir');
   assert.equal(h.report().verdict, 'ok'); assert.deepEqual(h.report().api.missing, []);
@@ -56,12 +58,39 @@ test('runtime tools chain evidence into checkpoint and memory candidate without 
   assert.ok(evidence.details.evidenceId); assert.equal(evidence.details.verified, true);
   await h.tools.get('runtime_checkpoint').execute('c1', { summary: '근거 확인 완료', nextAction: '구현', evidenceIds: [evidence.details.evidenceId] }, undefined, undefined, h.ctx);
   const candidate = await h.tools.get('runtime_memory_candidate').execute('m1', { kind: 'decision', title: '결정', content: '확장 우선 구조를 채택한다.', evidenceIds: [evidence.details.evidenceId] }, undefined, undefined, h.ctx);
-  assert.equal(candidate.details.canonical, false);
+  assert.equal(candidate.details.canonical, false); assert.equal(candidate.details.publishWith, null);
   const status = (await h.tools.get('runtime_status').execute('s1', {}, undefined, undefined, h.ctx)).details;
   assert.equal(status.checkpoint.summary, '근거 확인 완료'); assert.equal(status.pendingMemory, 1);
-  // Publishing needs a bound transport with server-enforced idempotency; none is bound, so it fails closed.
+  // No publish command exists any more: the model is the transport, and nothing here talks to a remote.
   await h.commands.get('runtime').handler(`publish ${candidate.details.candidateId}`, h.ctx);
-  assert.match(h.ctx.notices.at(-1).message, /MEMORY_PORT_UNBOUND/);
+  assert.match(h.ctx.notices.at(-1).message, /UNKNOWN_RUNTIME_COMMAND/);
+  const s = await h.openJournal(); assert.equal(s.outbox(candidate.details.candidateId).state, 'candidate');
+});
+test('runtime_reconcile closes an uncertain effect on the agent\'s attestation and journals who attested', async t => {
+  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
+  const s = await h.openJournal(); const ghost = s.acquire(s.workspace(h.root).id, 'ghost', { ttl: 1000 });
+  s.beginAction(ghost, { actionId: 'ghost-1', tool: 'bash', input: { command: 'deploy' } });
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } })).reason, /RECONCILIATION_REQUIRED/);
+  const result = await h.tools.get('runtime_reconcile').execute('rc', { actionIds: ['ghost-1'], observed: 'git status clean; deploy did not run', evidenceIds: [] }, undefined, undefined, h.ctx);
+  assert.deepEqual(result.details, { reconciled: ['ghost-1'], remaining: 0 });
+  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'true' } }), undefined);
+  const attested = s.events(s.workspace(h.root).id).find(e => e.kind === 'action.reconciled');
+  assert.equal(attested.payload.by, 'session'); assert.match(attested.payload.observed, /git status clean/);
+});
+test('agent_end only notifies about unrecorded effects, and a re-attach hands the model one resume card of journal facts', async t => {
+  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
+  const state = () => JSON.parse(h.handlers.get('before_agent_start')({}, h.ctx).message.content);
+  assert.equal(state().resume, undefined, 'a fresh session has nothing to resume');
+  await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } });
+  const before = h.ctx.notices.length; await h.handlers.get('agent_end')({}, h.ctx);
+  assert.match(h.ctx.notices.at(-1).message, /effects 1 since the last memory note/); assert.equal(h.ctx.notices.length, before + 1);
+  assert.equal(state().memory.effectsSinceNote, 1);
+  await h.handlers.get('session_switch')({}, h.ctx);
+  const card = state().resume;
+  assert.equal(card.epoch, 2); assert.equal(card.effectsSinceNote, 1); assert.deepEqual(card.recent.map(x => [x.tool, x.state]), [['bash', 'succeeded']]);
+  assert.equal(state().resume, undefined, 'the card is delivered once');
+  await h.handlers.get('session_compact')({}, h.ctx); assert.ok(state().resume, 'and again after a compaction');
 });
 test('/runtime pause blocks effects, resume restores; reconcile all clears uncertainty from a lapsed session', async t => {
   const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);

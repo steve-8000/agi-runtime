@@ -6,7 +6,7 @@ test('the four OMP events settle one action exactly once', async t => {
   const f = await fixture(t); const c = call();
   await run(f.kernel, c);
   assert.equal(action(f, c).state, 'succeeded');
-  assert.deepEqual(f.kernel.counters, { intents: 1, starts: 1, results: 1, ends: 1, unmatchedStarts: 0, unmatchedResults: 0, revisions: 0, rewrites: 0, blocks: 0 });
+  assert.deepEqual(f.kernel.counters, { intents: 1, starts: 1, results: 1, ends: 1, unmatchedStarts: 0, unmatchedResults: 0, revisions: 0, rewrites: 0, blocks: 0, turns: 0 });
   assert.equal(f.kernel.pending.size, 0);
 });
 test('a nested xd:// device dispatch shares the outer toolCallId and both actions still settle', async t => {

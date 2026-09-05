@@ -2,7 +2,7 @@
 
 ## 1. 범위
 
-기존 OMP 바이너리, `~/.omp/agent/*`, `mem.clab.one`, zvec index, Kubernetes를 수정하지 않는다. 쓰는 곳은 두 군데다: `~/.omp/agent/extensions/agi-runtime` symlink 하나, 그리고 `~/.omp/runtime/`. workspace 안에는 아무것도 쓰지 않는다.
+기존 OMP 바이너리, `~/.omp/agent/*`, Utopia(`mem.clab.one`), zvec index, Kubernetes를 수정하지 않는다. 이 계층이 쓰는 곳은 두 군데다: `~/.omp/agent/extensions/agi-runtime` symlink 하나, 그리고 `~/.omp/runtime/`. workspace 안에는 아무것도 쓰지 않는다. 메모리 receipt 계약의 반대편은 clab-mem MCP 서버(`lazy-project/clab-mem/mcp/`, 별도 저장소)이고 그 서명키는 `~/.clab-mem/receipt-signing.key`다 — Utopia 자체는 그대로다.
 
 파일 위치가 OMP 밖이라고 같은 OS 사용자의 프로세스에서 보호되는 것은 아니다. 권한 격리는 별도 OS account/sandbox/broker의 일이다.
 
@@ -63,24 +63,47 @@ probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime �
 | `blockOnUnknown` | `true` | lapse한 효과가 해소될 때까지 workspace의 새 효과 차단 |
 | `headlessEffects` | `allow` | `deny`: `hasUI=false` 세션의 효과 차단(`omp -p` 포함). k8s는 어느 쪽이든 `kubernetes-approval.ts`가 headless 차단 |
 | `requireApproval` | `[]` | 나열한 도구는 정확 입력·1회용 승인 프롬프트(UI 필요) |
-| `memoryReadTools` | clab-mem 읽기 5종 | 정확한 이름만 read로 분류. 근거: `mcp.json` 서버명 `clab-mem`, `lazy-project/clab-mem/mcp/server.ts` 도구 정의, OMP 라우트 `mcp__clab_mem_mem_*` |
+| `memoryReadTools` | `[]` (샘플: clab-mem 읽기 5종) | 정확한 이름만 read로 분류. 근거: `mcp.json` 서버명 `clab-mem`, `lazy-project/clab-mem/mcp/server.ts` 도구 정의, OMP 라우트 `mcp__clab_mem_mem_*` |
+| `memoryWriteTools` | `[]` (샘플: clab-mem 쓰기 4종) | 비멱등 원격 append. 오류는 `unknown(remote)`, 같은 `idempotency_key` 재발행만 허용, 전송 전 검사(자격증명·stale evidence·백엔드 상태·task key) |
+| `memoryTaskStartTool` | `''` | `memoryWriteTools` 중 새 task key를 처음 말해도 되는 도구. 나머지 쓰기는 이 세션에서 start/read로 확인된 키만 |
+| `memoryPublishTool` | `''` | 후보 승격 도구. 입력이 `runtime_memory_candidate`가 준 후보·payloadHash와 정확히 일치해야 통과 |
+| `memoryReceiptPublicKey` | `''` | clab-mem 서버의 Ed25519 공개키(hex 64). 비어 있으면 receipt는 telemetry, 불명 해소는 attestation뿐. 값은 `cd lazy-project/clab-mem && bun mcp/receipt.ts` 출력의 `publicKeyHex` |
+| `recall` | `{mode: advise, tools: []}` | `require`: goal의 첫 효과 전에 `tools` 중 하나가 이전 turn에 settle되어야 함. `tools ⊆ memoryReadTools`, `require`면 비어 있을 수 없음. 자동 해제 없음 — clab-mem이 없는 환경은 `advise` |
 | `structuredOperationTools` / `targets` | `[]` / `{}` | 신뢰된 infra 어댑터가 공급하는 descriptor와 target fingerprint. 현재 어댑터 없음 |
 
 잘못된 파일은 attach를 실패시킨다(`INVALID_RUNTIME_MODE` 등). 조용히 기본값으로 떨어지지 않는다. `OMP_RUNTIME_CONFIG`로 경로를, `OMP_RUNTIME_DIR`로 runtime dir 전체를 바꿀 수 있다.
+
+config에 **새 키**를 넣으면 이미 실행 중인 OMP 세션은 다음 attach(`/new`, `/resume`)에서 메모리에 올라 있는 옛 검증기로 그 파일을 읽어 `UNKNOWN_RUNTIME_CONFIG_KEY`로 disabled가 되고 compat report를 `degraded`로 덮어쓴다(실측: `memoryWriteTools` 추가 뒤 옛 세션의 `session_switch`). 코드와 config를 함께 올린 뒤에는 열려 있는 세션을 재시작한다. `doctor`가 `degraded`를 보이면 `attachError`를 먼저 본다.
+
+cwd가 `$HOME`인 세션은 runtime dir이 workspace 안이므로 `STATE_MUST_BE_OUTSIDE_WORKSPACE`로 attach하지 않는다(의도된 거절; 도구는 평소처럼 동작). 프로젝트 디렉터리에서 연다.
 
 ## 6. 복구
 
 ### 6.1 결과 불명 효과
 
-세션 시작 시 알림: `N건의 결과 불명 변경이 있습니다`. `/runtime status`로 `uncertainActions`(action id, tool, input hash 앞부분, 세션)를 본다. 실제 대상(working tree, 원격)을 직접 확인한 뒤:
+세션 시작 시 알림: `N건의 결과 불명 변경이 있습니다`. `runtime_status`/`/runtime status`로 `uncertainActions`(action id, tool, input hash 앞부분, 세션)를 본다. 실제 대상(working tree, git, 원격 기록)을 읽은 뒤:
 
 ```text
-/runtime reconcile <action-id>            # 하나
-/runtime reconcile all                    # 전부
-/runtime reconcile <action-id> <evidence-id…>   # runtime_evidence 영수증을 근거로 첨부(선택)
+runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 내용>", evidenceIds: [] })   # 에이전트
+/runtime reconcile <action-id|all> [evidence-id…]                                                      # 사람
 ```
 
-확인 대화상자는 사람의 attestation이다. 자동 재실행은 없다. `blockOnUnknown:false`로 두면 차단 없이 기록만 남는다.
+둘 다 attestation이고 저널에 `by: session`으로 남는다. 자동 재실행은 없다. `unknown`은 범위가 있어서 메모리 쓰기의 불명은 메모리 쓰기만 막고(`uncertainRemote`), working tree 효과는 `blockedUntilReconciled`가 true일 때만 막힌다. 메모리 쓰기의 불명은 같은 `idempotency_key`로 재발행할 수 있고, 서버의 서명 receipt가 검증되면 그 행이 `by: receipt`로 자동으로 닫힌다. `blockOnUnknown:false`로 두면 차단 없이 기록만 남는다.
+
+### 6.1.1 회상 게이트에 막힘
+
+`RECALL_REQUIRED`는 이 goal에서 아직 회상 도구가 이전 turn에 settle되지 않았다는 뜻이다. `mem_search`/`mem_task_lookup`/`mem_task_read`를 부르고 **다음 메시지**에서 효과를 다시 낸다. 같은 메시지에 병렬로 낸 효과는 항상 거절된다. clab-mem이 없는 환경이면 `recall.mode`를 `advise`로 — 게이트는 횟수로 풀리지 않는다.
+
+### 6.1.2 메모리 쓰기가 막힘
+
+| 코드 | 뜻 | 조치 |
+|---|---|---|
+| `MEMORY_BACKEND_DEGRADED` | 직전 clab-mem 호출이 실패/불명 | `mem_status` 한 번 성공시킨 뒤 다시 |
+| `MEMORY_TASK_NOT_STARTED` | 이 세션에서 그 task key를 start/read한 적 없음 | `mem_task_lookup`으로 키 확인 → `mem_task_read` 또는 `mem_task_start` |
+| `MEMORY_SECRET` | 입력에 자격증명 패턴 | 값을 빼고 다시. 서버 redact는 안전망이지 허가가 아니다 |
+| `STALE_EVIDENCE` | 인용한 evidence의 파일이 바뀜 | `runtime_evidence`로 다시 받아 인용 |
+| `MEMORY_CANDIDATE_MISMATCH` | publish 입력이 staged 후보와 다름 | `runtime_memory_candidate`가 준 candidateId·payloadHash와 같은 kind/title/content/evidence_ids 로 |
+| `RECONCILIATION_REQUIRED` (메모리) | 불명인 메모리 쓰기가 있음 | 같은 `idempotency_key`로 재발행하거나, `mem_task_read`로 확인 후 `runtime_reconcile` |
 
 ### 6.2 사용량 카운터
 
@@ -88,7 +111,7 @@ probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime �
 
 ### 6.3 저널 손상·디스크
 
-실행 후 저널 쓰기가 실패하면 `RUNTIME_JOURNAL_POISONED`로 이후 효과를 차단한다(enforce). 세션 재시작으로 풀린다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·사용량이 사라진다. 스키마가 다르면(`UNSUPPORTED_SCHEMA`) 마이그레이션하지 않고 거절한다 — 파일을 옮기고 새로 시작한다.
+실행 후 저널 쓰기가 실패하면 `RUNTIME_JOURNAL_POISONED`로 이후 효과를 차단한다(enforce). 세션 재시작으로 풀린다. 저널 파일은 `~/.omp/runtime/journals/<digest>.sqlite`; 삭제하면 그 workspace의 이력·unknown·사용량이 사라진다. 알려진 이전 스키마(v2)는 열 때 전진 마이그레이션한다(outbox 상태 `approved→candidate`, `sending→unknown`, `acked→published`, `user_version=3`). 그 밖의 스키마는 `UNSUPPORTED_SCHEMA`로 거절한다 — 파일을 옮기고 새로 시작한다.
 
 ### 6.4 lease
 
@@ -102,6 +125,20 @@ node scripts/install.mjs --uninstall
 
 symlink만 제거한다. 다음 세션부터 확장이 로드되지 않는다. `~/.omp/runtime`은 그대로 남아 재설치 시 이력이 이어진다.
 
-## 7. 메모리 outbox
+## 7. 메모리
 
-`runtime_memory_candidate`(모델) → `/runtime publish <id>`(사람) → 전송 → `acked` 또는 `unknown`. 전송 계층이 바인딩되지 않은 현재는 `publish`가 `MEMORY_PORT_UNBOUND`로 멈춘다. 후보는 저널에 남으며 `/runtime status`의 `pendingMemory`로 보인다. `/runtime reject <id>`로 폐기. 실제 기록은 지금처럼 clab-mem 도구(`mem_task_*`)를 모델이 직접 호출하는 경로가 정본이다; 그 호출은 이 계층에서 효과로 저널된다.
+두 경로, 전송은 둘 다 모델이다.
+
+**작업 원장** — `mem_task_start/note/complete`, `mem_supersede`. 서버가 `idempotency_key`를 필수로 받는다: 새 절이면 새 값, 타임아웃 뒤 재시도는 **같은 값**(서버가 같은 절을 두 번 붙이지 않고 `action=duplicate`를 돌려준다). 결과 첫 줄이 서명 receipt다.
+
+**정본 승격** — `runtime_memory_candidate`(kind·title·content·evidenceIds) → 돌려받은 `candidateId`·`payloadHash`로 `mem_publish({candidate_id, idempotency_key: candidate_id, payload_hash, kind, title, content, evidence_ids})` → `submitted` → 검증된 receipt로 `published`. `pendingMemory`는 `candidate|submitted|unknown` 수다. `/runtime reject <id>`로 폐기.
+
+**서명 키** — clab-mem 쪽에서 한 번:
+
+```sh
+cd ~/lazy-project/clab-mem && bun mcp/receipt.ts      # ~/.clab-mem/receipt-signing.key (0600) 생성, publicKeyHex 출력
+```
+
+출력의 `publicKeyHex`를 `~/.omp/runtime/config.json`의 `memoryReceiptPublicKey`에 넣는다. 키 교체는 파일을 지우고 다시 만든 뒤 config를 갱신한다 — 그 사이의 receipt는 검증되지 않고 telemetry로 남는다. `node scripts/doctor.mjs`의 `memory-receipts: verifiable`이 확인이다.
+
+**crash·lapse** — 쓰기 도중 프로세스가 죽으면 그 행은 `unknown(remote)`이다. 다음 세션의 resume card와 `uncertainRemote`에 보인다. `mem_task_read`로 절이 붙었는지 읽고 `runtime_reconcile`, 또는 같은 `idempotency_key`로 재발행.

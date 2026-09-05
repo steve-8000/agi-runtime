@@ -1,9 +1,9 @@
 {
-  "contract": 2,
+  "contract": 3,
   "surface": {
     "api": ["on", "registerTool", "registerCommand", "setLabel", "zod", "logger", "pi.VERSION", "pi.getAgentDir"],
     "context": ["hasUI", "cwd", "sessionManager.getSessionId", "ui.select", "ui.notify", "setInterval", "clearTimer", "abort"],
-    "events": ["session_start", "session_switch", "session_shutdown", "goal_updated", "before_agent_start", "tool_call", "tool_execution_start", "tool_result", "tool_execution_end"]
+    "events": ["session_start", "session_switch", "session_shutdown", "session_compact", "auto_compaction_end", "goal_updated", "before_agent_start", "turn_start", "agent_end", "tool_call", "tool_execution_start", "tool_result", "tool_execution_end"]
   },
   "versions": {
     "18.1.10": {
@@ -11,8 +11,8 @@
       "sourceTag": "v18.1.10",
       "commit": "f241301c83726afe75a847e919b89977a54dafbe",
       "binary": "homebrew omp 18.1.10 (darwin-arm64)",
-      "method": "scripts/compat.mjs --live: auto-discovered from ~/.omp/agent/extensions/agi-runtime, OMP_RUNTIME_REQUIRED=1, read+bash journaled, nested xd:// dispatch verified with -e",
-      "notes": "tool_call fires at arg-prep with the ORIGINAL input; tool_execution_start carries the effective args; a nested xd:// device dispatch reuses the outer toolCallId with a different toolName and emits no tool_execution_start/end of its own."
+      "method": "scripts/compat.mjs --live: auto-discovered from ~/.omp/agent/extensions/agi-runtime, OMP_RUNTIME_REQUIRED=1, read+bash journaled, nested xd:// dispatch verified with -e; contract 3 re-runs show counters.turns=3-4 for one prompt with two tool calls",
+      "notes": "tool_call fires at arg-prep with the ORIGINAL input; tool_execution_start carries the effective args; a nested xd:// device dispatch reuses the outer toolCallId with a different toolName and emits no tool_execution_start/end of its own. turn_start fires once per model call (live: 2-3 per prompt with two tools). session_compact, auto_compaction_end and agent_end are registered from omp://extensions.md but not yet observed live."
     }
   }
 }

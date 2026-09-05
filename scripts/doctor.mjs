@@ -20,8 +20,12 @@ let link = 'absent';
 try { link = lstatSync(layout.extensionLink).isSymbolicLink() ? (realpathSync(layout.extensionLink) === repo ? 'ours' : 'foreign-link') : 'foreign-file'; } catch { /* absent */ }
 checks.push({ name: 'extension-link', status: link === 'ours' ? 'installed' : link, path: layout.extensionLink });
 
-try { const config = loadRuntimeConfig(layout); checks.push({ name: 'runtime-config', status: 'valid', path: layout.config, mode: config.mode, headlessEffects: config.headlessEffects, blockOnUnknown: config.blockOnUnknown }); }
-catch (error) { checks.push({ name: 'runtime-config', status: 'invalid', path: layout.config, reason: error.code ?? error.message }); }
+try {
+  const config = loadRuntimeConfig(layout);
+  checks.push({ name: 'runtime-config', status: 'valid', path: layout.config, mode: config.mode, headlessEffects: config.headlessEffects, blockOnUnknown: config.blockOnUnknown, recall: config.recall.mode });
+  // Without the server's public key every receipt is telemetry: uncertain memory writes then close only by attestation.
+  checks.push({ name: 'memory-receipts', status: config.memoryReceiptPublicKey ? 'verifiable' : 'attestation-only', writeTools: config.memoryWriteTools.length, publishTool: config.memoryPublishTool || null });
+} catch (error) { checks.push({ name: 'runtime-config', status: 'invalid', path: layout.config, reason: error.code ?? error.message }); }
 
 const reportPath = version ? join(layout.compat, `${version}.json`) : null;
 if (reportPath && existsSync(reportPath)) {
@@ -29,7 +33,6 @@ if (reportPath && existsSync(reportPath)) {
   checks.push({ name: 'compat-report', status: report.verdict, at: report.at, contract: report.contract, missing: [...report.api.missing, ...(report.context?.missing ?? [])], counters: report.counters ?? null, attachError: report.attachError ?? null });
 } else checks.push({ name: 'compat-report', status: 'none', reason: 'no OMP session has loaded the extension for this version yet' });
 
-checks.push({ name: 'canonical-memory-transport', status: 'unbound', reason: 'publication fails closed until a transport with server-enforced idempotency is bound' });
-const ready = checks.filter(x => x.name !== 'canonical-memory-transport' && x.name !== 'tested-version').every(x => ['present', 'installed', 'valid', 'ok'].includes(x.status));
+const ready = checks.filter(x => x.name !== 'memory-receipts' && x.name !== 'tested-version').every(x => ['present', 'installed', 'valid', 'ok'].includes(x.status));
 console.log(JSON.stringify({ ready, ompVersion: version, runtimeDir: layout.root, checks }, null, 2));
 if (!ready) process.exitCode = 1;

@@ -3,7 +3,6 @@ import { RuntimeStore } from "../src/store.mjs";
 import { RuntimeKernel } from "../src/kernel.mjs";
 import { captureEvidence, verifyEvidence } from "../src/evidence.mjs";
 import { check, RuntimeFault } from "../src/util.mjs";
-import { publishCandidate, reconcileMemory, CanonicalMemoryPort } from "../src/memory.mjs";
 import { runtimeLayout, journalPath, loadRuntimeConfig, defaultAgentDir } from "../src/paths.mjs";
 import { probeApi, probeContext, writeCompatReport, hostVersion, hostAgentDir, CONTRACT } from "./compat.ts";
 import type { Lease, ConfirmRequest, UncertainAction } from "./runtime-types.ts";
@@ -11,22 +10,21 @@ import type { Lease, ConfirmRequest, UncertainAction } from "./runtime-types.ts"
 // AGI runtime for OMP as an extension, not a fork.
 //
 // Everything this layer does rides on OMP's public extension surface (tool_call / tool_result /
-// tool_execution_* / goal_updated / session_*), so `brew upgrade omp` replaces the binary and this
-// directory keeps loading. No core file is patched. If an upgrade changes the contract, the compat
-// probe records it under ~/.omp/runtime/compat/<version>.json and the kernel degrades to
-// observation; with OMP_RUNTIME_REQUIRED=1 it fails closed instead.
+// tool_execution_* / turn_start / agent_end / goal_updated / session_*), so `brew upgrade omp`
+// replaces the binary and this directory keeps loading. No core file is patched. If an upgrade
+// changes the contract, the compat probe records it under ~/.omp/runtime/compat/<version>.json and
+// the kernel degrades to observation; with OMP_RUNTIME_REQUIRED=1 it fails closed instead.
+//
+// Authority: the agent holds it. The runtime is observer, gatekeeper and ledger — it forces the
+// procedure (recall before the first effect, read-back before a retry, a verified receipt before a
+// candidate counts as canonical) and never starts a turn of its own. The only human approval left
+// is Kubernetes outside clab-cluster, which kubernetes-approval.ts and the structured policy own.
 //
 // State lives in ~/.omp/runtime (journals, compat reports, operator config). Nothing is written
 // into the workspace, and nothing here is canonical memory - Utopia/clab-mem stays canonical.
 
-const memoryKey = Symbol.for("clab.runtime.canonical-memory-port.v1");
 const REQUIRED = process.env.OMP_RUNTIME_REQUIRED === "1";
-
-/** A canonical-memory transport is bound by a trusted host module, never by config or model output. */
-function boundMemoryPort(): CanonicalMemoryPort | undefined {
-	const port: unknown = (globalThis as Record<symbol, unknown>)[memoryKey]; // symbol-keyed global slot; shape checked below
-	return port instanceof CanonicalMemoryPort ? port : undefined;
-}
+const KINDS = ["decision", "constraint", "incident", "procedure", "checkpoint"] as const;
 
 type Ctx = ExtensionContext;
 
@@ -43,6 +41,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	let timer: unknown;
 	let activeCtx: Ctx | undefined;
 	let attachError: string | undefined;
+	let resumeCard = false;
 
 	const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: value });
 	const requireKernel = () => { check(kernel, "RUNTIME_NOT_READY", attachError ?? "runtime is not attached"); return kernel!; };
@@ -73,9 +72,11 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 			try { store!.heartbeat(lease!); }
 			catch (error) { ctx.ui.notify(`AGI Runtime: writer lease lost (${fault(error)}); aborting`, "error"); ctx.abort(); }
 		}, 5000);
+		// A re-attach (resume, switch, crash recovery) is a boundary the model did not see: hand it the journal's facts once.
+		resumeCard = lease!.epoch > 1;
 		const state = kernel.context();
 		if (state.uncertainActions.length) {
-			ctx.ui.notify(`AGI Runtime: ${state.uncertainActions.length}건의 결과 불명 변경이 있습니다. /runtime status 확인 후 /runtime reconcile <action-id|all>`, state.blockedUntilReconciled ? "warning" : "info");
+			ctx.ui.notify(`AGI Runtime: ${state.uncertainActions.length}건의 결과 불명 변경이 있습니다. 실제 상태를 읽고 runtime_reconcile 또는 /runtime reconcile <action-id|all>`, state.blockedUntilReconciled ? "warning" : "info");
 		}
 		report();
 	}
@@ -98,17 +99,37 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	}
 
 	pi.on("session_start", async (_event, ctx) => { await safeAttach(ctx); });
-	pi.on("session_switch", async (_event, ctx) => { await safeAttach(ctx); });
+	pi.on("session_switch", async (_event, ctx) => { await safeAttach(ctx); resumeCard = true; });
 	pi.on("session_shutdown", async () => { await detach(); });
+	pi.on("session_compact", () => { resumeCard = true; });
+	pi.on("auto_compaction_end", () => { resumeCard = true; });
+	pi.on("turn_start", () => { kernel?.turnStart(); });
 	pi.on("goal_updated", event => { if (kernel && store && lease) store.mirrorGoal(lease, event.goal ?? null); });
-	pi.on("before_agent_start", () => {
+	// Notification only. The runtime never continues or blocks a stop; the user is the continuation authority.
+	pi.on("agent_end", (_event, ctx) => {
 		if (!kernel) return;
 		const c = kernel.context();
+		if (c.memory.effectsSinceNote > 0 && ctx.hasUI) ctx.ui.notify(`AGI Runtime: effects ${c.memory.effectsSinceNote} since the last memory note${c.memory.task ? ` under ${c.memory.task}` : " (no task record)"}`, "info");
+	});
+	pi.on("before_agent_start", () => {
+		if (!kernel) return;
+		// A new prompt is a new model call even on a host that never emits turn_start: counting a turn twice only
+		// delays a recall gate by one message; never counting would hold it closed for the whole session.
+		kernel.turnStart();
+		const c = kernel.context();
 		// Compact operational facts for the model. Not permissions. `search` is the one routing hint this layer
-		// carries: zvec-grep discovers, native tools verify; the runtime itself never touches a search's input.
-		const state = { runtime: "agi-runtime", mode: c.mode, paused: c.paused, uncertainActions: c.uncertainActions.length, blockedUntilReconciled: c.blockedUntilReconciled,
+		// carries: semantic and cross-file discovery goes to zvec first, exact and exhaustive lookups to native tools,
+		// and the current source is authoritative over any index excerpt.
+		const state: Record<string, unknown> = { runtime: "agi-runtime", mode: c.mode, turn: c.turn, paused: c.paused,
+			uncertainActions: c.uncertainActions.length, blockedUntilReconciled: c.blockedUntilReconciled, uncertainRemote: c.uncertainRemote,
 			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory,
-			search: { semanticDiscovery: "mcp__zvec_grep_search", exactAndExhaustive: "native grep/rg/lsp", authority: "current source, not index excerpts" } };
+			recall: c.recall, memory: c.memory, discovery: c.discovery,
+			search: { semanticDiscovery: "mcp__zvec_grep_search", exactAndExhaustive: "native grep/rg/lsp", authority: "current source, not index excerpts", root: c.search.root, index: c.search.index } };
+		if (resumeCard && store && lease) {
+			resumeCard = false;
+			state.resume = { epoch: c.epoch, nativeGoal: c.nativeGoal, task: c.memory.task, effectsSinceNote: c.memory.effectsSinceNote,
+				uncertain: (c.uncertainActions as UncertainAction[]).map(x => ({ id: x.id.slice(0, 12), tool: x.tool })), recent: store.recentActions(lease.session) };
+		}
 		return { message: { customType: "agi-runtime-state", content: JSON.stringify(state), display: false } };
 	});
 
@@ -132,7 +153,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	// hook above is what fails closed under OMP_RUNTIME_REQUIRED, and it must be installed to do so.
 	if (typeof pi.registerTool !== "function" || typeof pi.registerCommand !== "function") return;
 	pi.registerTool({ name: "runtime_status", label: "Runtime Status", approval: "read",
-		description: "Read AGI runtime operational state: pause, uncertain effects awaiting reconciliation, usage counters, contract counters.", parameters: z.object({}),
+		description: "Read AGI runtime operational state: pause, uncertain effects awaiting reconciliation, recall and memory state, usage and contract counters.", parameters: z.object({}),
 		async execute() { return text(requireKernel().context()); } });
 	pi.registerTool({ name: "runtime_evidence", label: "Verify Source Evidence", approval: "read",
 		description: "Read and hash a current workspace file range. Rejects secret paths and symlinks. Returns an evidence receipt id, not permission or truth.",
@@ -149,49 +170,49 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 			store!.checkpoint(lease!, params); return text({ saved: true });
 		} });
 	pi.registerTool({ name: "runtime_memory_candidate", label: "Memory Candidate", approval: "write",
-		description: "Stage a verified durable decision/constraint/incident/procedure/checkpoint for Utopia. Operator review (/runtime publish) is required; nothing is sent remotely here.",
-		parameters: z.object({ kind: z.enum(["decision", "constraint", "incident", "procedure", "checkpoint"]), title: z.string(), content: z.string(), evidenceIds: z.array(z.string()) }),
+		description: "Stage a durable decision/constraint/incident/procedure/checkpoint for canonical memory, bound to evidence receipts. Nothing is sent here: publish it with the configured memory publish tool, passing candidateId as idempotency_key and the returned payloadHash with the exact same kind/title/content/evidence_ids. It becomes canonical only when a signed receipt verifies.",
+		parameters: z.object({ kind: z.enum(KINDS), title: z.string(), content: z.string(), evidenceIds: z.array(z.string()) }),
 		async execute(_id, params: { kind: string; title: string; content: string; evidenceIds: string[] }) {
-			requireKernel(); return text({ candidateId: store!.candidate(lease!, params), canonical: false });
+			const k = requireKernel(); const candidateId = store!.candidate(lease!, params);
+			return text({ candidateId, payloadHash: store!.outbox(candidateId).payload_hash, publishWith: k.config.memoryPublishTool || null, canonical: false });
+		} });
+	pi.registerTool({ name: "runtime_reconcile", label: "Reconcile Uncertain Effects", approval: "write",
+		description: "Close uncertain (unknown-outcome) effects after reading back the real target state: the working tree, git, or the memory record itself. State what was observed; this is an attestation, never a retry. Optional evidence receipt ids support it.",
+		parameters: z.object({ actionIds: z.array(z.string()), observed: z.string(), evidenceIds: z.array(z.string()) }),
+		async execute(_id, params: { actionIds: string[]; observed: string; evidenceIds: string[] }) {
+			const k = requireKernel();
+			const pending: UncertainAction[] = store!.unknownActions(lease!.workspace);
+			const targets = params.actionIds.includes("all") ? pending : pending.filter(x => params.actionIds.some(id => x.id === id || (id.length >= 12 && x.id.startsWith(id))));
+			check(targets.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
+			if (params.evidenceIds.length) { store!.assertEvidence(lease!.workspace, params.evidenceIds); for (const id of params.evidenceIds) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
+			for (const x of targets) store!.reconcile(lease!, x.id, params.evidenceIds, { by: "session", observed: params.observed });
+			return text({ reconciled: targets.map(x => x.id), remaining: store!.unknownActions(lease!.workspace).length });
 		} });
 
 	// ---- operator commands ---------------------------------------------------------------------
 	pi.registerCommand("runtime", {
-		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|publish <id>|reject <id>|reconcile-memory <id>|compat",
+		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|reject <candidate-id>|compat",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [command = "status", target, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
 				if (command === "compat") { const path = report(); ctx.ui.notify(`compat report: ${path}\ncontract v${CONTRACT}, OMP ${version}, missing: ${api.missing.join(", ") || "none"}`, api.missing.length ? "warning" : "info"); return; }
 				const k = requireKernel();
 				if (command === "pause") { k.paused = true; ctx.abort(); }
-				else if (command === "resume") { check(!k.config.blockOnUnknown || store!.unknownActions(lease!.workspace).length === 0, "RECONCILIATION_REQUIRED"); k.paused = false; }
+				else if (command === "resume") { check(!k.config.blockOnUnknown || !k.context().blockedUntilReconciled, "RECONCILIATION_REQUIRED"); k.paused = false; }
 				else if (command === "reconcile") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reconcile <action-id|all> [evidence-id…]");
 					const pending: UncertainAction[] = store!.unknownActions(lease!.workspace).filter((x: UncertainAction) => target === "all" || x.id === target);
 					check(pending.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
-					if (rest.length) { store!.assertEvidence(lease!.workspace, rest); for (const id of rest) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_RECONCILIATION_EVIDENCE"); }
-					// Human attestation, not automated proof of a remote effect's outcome.
+					if (rest.length) { store!.assertEvidence(lease!.workspace, rest); for (const id of rest) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
 					const prompt = `실제 대상 상태를 확인했고, 자동 재실행 없이 아래 ${pending.length}건의 불확실성을 해소했습니까?\n${pending.map(x => `${x.id} ${x.tool} ${x.input_hash.slice(0, 12)} (session ${x.session.slice(0, 8)})`).join("\n")}`;
 					if ((await ctx.ui.select(prompt, ["확인 완료", "취소"])) !== "확인 완료") return;
-					for (const x of pending) store!.reconcile(lease!, x.id, rest);
-				} else if (command === "reconcile-memory") {
-					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reconcile-memory <candidate-id>");
-					await reconcileMemory(store!, lease!, target, boundMemoryPort());
+					for (const x of pending) store!.reconcile(lease!, x.id, rest, { by: "session", observed: "operator confirmed via /runtime reconcile" });
 				} else if (command === "reject") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reject <candidate-id>");
 					const row = store!.outbox(target);
-					check(row?.workspace === lease!.workspace && ["candidate", "approved"].includes(row.state), "OUTBOX_STATE_CONFLICT");
+					check(row?.workspace === lease!.workspace && ["candidate", "submitted", "unknown"].includes(row.state), "OUTBOX_STATE_CONFLICT");
 					if ((await ctx.ui.select("이 메모리 후보를 폐기합니까?", ["폐기", "취소"])) !== "폐기") return;
 					store!.setOutbox(lease!, target, row.state, "rejected");
-				} else if (command === "publish") {
-					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime publish <candidate-id>");
-					const port = boundMemoryPort();
-					check(port, "MEMORY_PORT_UNBOUND", "no canonical memory transport with server-enforced idempotency is bound");
-					const row = store!.outbox(target);
-					check(row?.workspace === lease!.workspace && ["candidate", "approved"].includes(row.state), "MEMORY_NOT_CANDIDATE");
-					if ((await ctx.ui.select(`Utopia에 이 기록을 게시합니까?\n${row.payload}`, ["게시", "취소"])) !== "게시") return;
-					if (row.state === "candidate") store!.setOutbox(lease!, target, "candidate", "approved");
-					await publishCandidate(store!, lease!, k.root, target, port);
 				} else check(command === "status", "UNKNOWN_RUNTIME_COMMAND", `unknown: ${command}`);
 				ctx.ui.notify(JSON.stringify(k.context(), null, 1), "info");
 			} catch (error) { ctx.ui.notify(`/runtime ${command}: ${fault(error)}`, "error"); }

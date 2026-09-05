@@ -2,7 +2,7 @@
   "degraded": false,
   "offline": {
     "verdict": "ok",
-    "contract": 2,
+    "contract": 3,
     "mockVersion": "18.1.10",
     "counters": {
       "intents": 2,
@@ -13,7 +13,8 @@
       "unmatchedResults": 0,
       "revisions": 0,
       "rewrites": 0,
-      "blocks": 0
+      "blocks": 0,
+      "turns": 0
     },
     "notices": []
   },
@@ -28,8 +29,8 @@
       "Working..."
     ],
     "report": {
-      "contract": 2,
-      "at": "2026-09-04T22:05:02.082Z",
+      "contract": 3,
+      "at": "2026-09-05T14:16:25.183Z",
       "verdict": "ok",
       "version": "18.1.10",
       "api": {
@@ -68,7 +69,8 @@
         "unmatchedResults": 0,
         "revisions": 0,
         "rewrites": 0,
-        "blocks": 0
+        "blocks": 0,
+        "turns": 3
       }
     },
     "actions": [

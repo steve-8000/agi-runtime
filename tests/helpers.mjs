@@ -41,11 +41,11 @@ export function call(overrides = {}) {
   return { toolCallId: 'call-1', toolName: 'bash', input: { command: 'printf ok' }, hasUI: true, ...overrides };
 }
 /** Drive one tool through the whole event sequence OMP emits for a model-issued call. */
-export async function run(kernel, c, { isError = false, exitCode = 0, args } = {}) {
+export async function run(kernel, c, { isError = false, exitCode = 0, args, text = 'ok' } = {}) {
   const intent = await kernel.intent(c);
   if (intent?.block) return intent;
   kernel.revise(c.toolCallId, c.toolName, args ?? c.input);
-  const result = { content: [{ type: 'text', text: 'ok' }], details: { exitCode } };
+  const result = { content: [{ type: 'text', text }], details: { exitCode } };
   kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'result' });
   kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'end' });
   return intent;

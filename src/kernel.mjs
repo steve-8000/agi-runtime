@@ -1,27 +1,43 @@
 import { realpathSync } from 'node:fs';
-import { check, digest, RuntimeFault } from './util.mjs';
+import { check, digest, RuntimeFault, rejectObviousSecrets } from './util.mjs';
 import { runtimeConfig } from './config.mjs';
 import { classify, decision, approvalHash, isEffect } from './policy.mjs';
 import { sensitiveRead } from './workspace-write.mjs';
+import { parseReceipt, verifyReceipt, evidenceIsCurrent, citedEvidence } from './memory.mjs';
 
 const SETTLED_RETENTION_MS = 60000;
 const BLOCKED_RETENTION = 512;
+const ZVEC = 'mcp__zvec_grep_search';
+const SCOPE_FLAGS = ['hidden', 'noIgnore', 'follow'];
 const ticketKey = (toolCallId, toolName) => `${toolCallId}\u0000${toolName}`;
+const firstLine = result => {
+  const text = result?.content?.find(part => part?.type === 'text')?.text;
+  return typeof text === 'string' ? text.slice(0, 512).split('\n', 1)[0] : '';
+};
 
 /**
  * Hook-driven execution boundary. OMP's public extension events carry everything the journal needs:
- *   tool_call            → intent(): policy, approval, reconciliation gate, `executing` row
+ *   tool_call            → intent(): policy, approval, recall/memory gates, reconciliation gate, `executing` row
  *   tool_execution_start → revise(): the input that actually runs (other handlers may have revised it)
  *   tool_result          → settle(): first observation of the raw outcome, before other middleware
  *   tool_execution_end   → settle(): final outcome; a divergence from tool_result is journaled
+ *   turn_start           → turnStart(): the model can only have read a result in a later turn
  * Nothing here patches OMP. An unknown event shape degrades to observation, never to silent trust.
+ * Tool output is telemetry; the one exception is a receipt whose Ed25519 signature verifies against
+ * operator config, which may close an uncertain memory write or publish.
  */
 export class RuntimeKernel {
   constructor({ store, lease, root, config = {}, confirm, required = false }) {
     this.store = store; this.lease = lease; this.root = realpathSync(root);
     this.config = runtimeConfig(config); this.confirm = confirm; this.required = required;
     this.pending = new Map(); this.blocked = new Set(); this.poison = null;
-    this.counters = { intents: 0, starts: 0, results: 0, ends: 0, unmatchedStarts: 0, unmatchedResults: 0, revisions: 0, rewrites: 0, blocks: 0 };
+    this.counters = { intents: 0, starts: 0, results: 0, ends: 0, unmatchedStarts: 0, unmatchedResults: 0, revisions: 0, rewrites: 0, blocks: 0, turns: 0 };
+    this.remoteTools = Object.freeze([...this.config.memoryWriteTools, ...(this.config.memoryPublishTool ? [this.config.memoryPublishTool] : [])]);
+    this.memoryTools = Object.freeze([...this.config.memoryReadTools, ...this.remoteTools]);
+    this.turn = 0;
+    this.recall = new Map(); // goal key → { turn, ok, hits, reads, taskKeys: Map(key → turn) }
+    this.search = { index: null };
+    this.discovery = { zvec: 0, reads: new Set(), readsBeforeFirstZvec: null };
   }
   get enforcing() { return this.config.mode === 'enforce'; }
   get paused() { return this.store.isPaused(this.lease.workspace); }
@@ -35,6 +51,7 @@ export class RuntimeKernel {
       throw error;
     }
   }
+  observe(fn) { try { fn(); } catch { /* observability only */ } }
   prune() {
     const now = this.store.now();
     for (const [id, ticket] of this.pending) if (ticket.settledAt && now - ticket.settledAt > SETTLED_RETENTION_MS) this.pending.delete(id);
@@ -43,6 +60,60 @@ export class RuntimeKernel {
   block(key, reason) {
     this.blocked.add(key); this.counters.blocks++;
     return { block: true, reason };
+  }
+  /** One model call plus its tool executions. A result settled in turn t is first visible to the model in turn t+1. */
+  turnStart() { this.turn++; this.counters.turns++; }
+  goalKey() {
+    const goal = this.store.sessionRow(this.lease.session)?.native_goal;
+    return goal ? String(JSON.parse(goal)?.id ?? 'none') : 'none';
+  }
+  recallEntry(goal = this.goalKey()) {
+    let entry = this.recall.get(goal);
+    if (!entry) { entry = { turn: Infinity, ok: false, hits: null, reads: 0, taskKeys: new Map() }; this.recall.set(goal, entry); }
+    return entry;
+  }
+  freezeDiscovery() { if (this.discovery.readsBeforeFirstZvec === null) this.discovery.readsBeforeFirstZvec = this.discovery.reads.size; }
+
+  /**
+   * The first effect of a goal runs only after a recall tool settled in an earlier turn: an intent seen
+   * in the same turn proves nothing about order or about the model having read the result. A failed
+   * recall settles too — an unreachable backend does not stop work, it is reported in the state.
+   */
+  recallGate() {
+    if (this.config.recall.mode !== 'require') return;
+    const tools = this.config.recall.tools.join('|');
+    const entry = this.recall.get(this.goalKey());
+    check(entry && entry.turn < this.turn, 'RECALL_REQUIRED', entry ? `recall settles this turn; read it and re-issue the effect in your next message` : `call ${tools} and read the result before the first effect of this goal`);
+    const task = this.lease.epoch > 1 ? this.store.memoryTask(this.lease.session) : null;
+    if (task) {
+      const readTurn = entry.taskKeys.get(task.key);
+      check(readTurn !== undefined && readTurn < this.turn, 'RECALL_REQUIRED', `resumed session: read task record ${task.key} (${tools}) before the first effect`);
+    }
+    if (!entry.shallowChecked) {
+      entry.shallowChecked = true;
+      if ((entry.hits ?? 0) > 0 && entry.reads === 0) this.observe(() => this.store.emit(this.lease.workspace, 'recall.shallow', { session: this.lease.session, hits: entry.hits }));
+    }
+  }
+  /** Pre-send checks for a canonical-memory write. All structural: the input, the journal and operator config; never the result of another call. */
+  memoryWriteGate({ toolCallId, toolName, input }) {
+    try { rejectObviousSecrets(input ?? null); } catch (error) { check(false, 'MEMORY_SECRET', `refusing to send a possible credential to canonical memory (${error.code})`); }
+    const cited = citedEvidence(this.store, this.lease.workspace, input);
+    // A work-ledger note need not cite a file range; one that does must cite the file as it is now.
+    if (cited.length) evidenceIsCurrent(this.store, this.lease.workspace, this.root, cited);
+    else if (toolName !== this.config.memoryPublishTool) this.observe(() => this.store.emit(this.lease.workspace, 'memory.unverified', { toolCallId, tool: toolName }));
+    const last = this.store.lastOutcome(this.lease.session, this.memoryTools);
+    check(last !== 'failed' && last !== 'unknown', 'MEMORY_BACKEND_DEGRADED', 'the last canonical-memory call did not succeed; verify the backend with a status read before writing');
+    const key = input?.task_key;
+    if (toolName !== this.config.memoryTaskStartTool && toolName !== this.config.memoryPublishTool && typeof key === 'string') {
+      check(this.store.taskObserved(this.lease.session, key), 'MEMORY_TASK_NOT_STARTED', `no successful start or read of task ${key} in this session; look the key up first`);
+    }
+    if (toolName === this.config.memoryPublishTool) {
+      const row = this.store.outbox(typeof input?.candidate_id === 'string' ? input.candidate_id : '');
+      check(row?.workspace === this.lease.workspace && ['candidate', 'submitted', 'unknown'].includes(row.state), 'MEMORY_CANDIDATE_MISMATCH', 'candidate_id is not a pending candidate of this workspace');
+      const payload = { kind: input.kind, title: input.title, content: input.content, evidenceIds: input.evidence_ids };
+      check(input.idempotency_key === row.id && input.payload_hash === row.payload_hash && digest(payload) === row.payload_hash, 'MEMORY_CANDIDATE_MISMATCH', 'publish input must carry the candidate id as idempotency_key and the exact staged payload');
+      evidenceIsCurrent(this.store, this.lease.workspace, this.root, payload.evidenceIds);
+    }
   }
 
   /** Returns a tool_call result: `{block, reason}` or undefined. The runtime never rewrites a tool's input. */
@@ -60,6 +131,15 @@ export class RuntimeKernel {
       const effect = isEffect(op);
       if (effect) check(!this.paused, 'RUNTIME_PAUSED', '/runtime resume 후 계속하십시오');
       if (toolName === 'read' && sensitiveRead(this.root, input?.path)) this.store.emit(this.lease.workspace, 'read.sensitive', { toolCallId, path: input.path });
+      if (toolName === 'read' && this.discovery.readsBeforeFirstZvec === null && typeof input?.path === 'string') this.discovery.reads.add(input.path);
+      if (toolName === ZVEC) {
+        this.discovery.zvec++; this.freezeDiscovery();
+        const flags = SCOPE_FLAGS.filter(flag => input?.[flag] === true);
+        if (flags.length) this.store.emit(this.lease.workspace, 'search.scope', { toolCallId, flags });
+      }
+      if (this.remoteTools.includes(toolName)) this.memoryWriteGate(call);
+      if (effect && this.enforcing) this.recallGate();
+      if (effect) this.freezeDiscovery();
       if (policy.requiresApproval) {
         check(call.hasUI && typeof this.confirm === 'function', 'INTERACTIVE_APPROVAL_REQUIRED');
         const actionHash = approvalHash(call, op, this.lease);
@@ -71,8 +151,10 @@ export class RuntimeKernel {
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
       const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
-      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown }));
-      this.pending.set(key, { actionId, toolName, isEffect: effect, inputHash: digest(input), settledAt: 0, isError: undefined });
+      const resolves = this.remoteTools.includes(toolName) && typeof input?.idempotency_key === 'string'
+        ? this.store.unknownMemoryWrites(this.lease.workspace, { tool: toolName, key: input.task_key ?? input.candidate_id ?? null, idem: input.idempotency_key }) : [];
+      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools, resolves }));
+      this.pending.set(key, { actionId, toolName, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
       return undefined;
     } catch (error) {
       if (error instanceof RuntimeFault) return this.block(key, `${error.code}: ${error.message}`);
@@ -87,7 +169,12 @@ export class RuntimeKernel {
     if (!ticket) { if (!this.blocked.has(key)) this.counters.unmatchedStarts++; return; }
     if (ticket.settledAt) return;
     try {
-      if (this.journal(() => this.store.reviseAction(this.lease, ticket.actionId, args))) { ticket.inputHash = digest(args); this.counters.revisions++; }
+      if (this.journal(() => this.store.reviseAction(this.lease, ticket.actionId, args))) {
+        ticket.input = args; ticket.inputHash = digest(args); this.counters.revisions++;
+        // A memory write whose input changed after the gates ran is no longer the intent that passed them:
+        // execution cannot be stopped here, so its outcome is journaled as uncertain whatever the tool reports.
+        if (this.remoteTools.includes(toolName)) { ticket.revised = true; this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_revised', { actionId: ticket.actionId, tool: toolName })); }
+      }
     } catch { /* journal poison is surfaced on the next intent */ }
   }
   /** First observation wins; a later divergent isError (middleware rewrite) is journaled, not trusted. */
@@ -99,26 +186,101 @@ export class RuntimeKernel {
     if (ticket.settledAt) {
       if (ticket.isError !== !!isError) {
         this.counters.rewrites++;
-        try { this.store.emit(this.lease.workspace, 'action.rewritten', { actionId: ticket.actionId, phase, from: ticket.isError, to: !!isError }); } catch { /* observability only */ }
+        this.observe(() => this.store.emit(this.lease.workspace, 'action.rewritten', { actionId: ticket.actionId, phase, from: ticket.isError, to: !!isError }));
       }
       if (phase === 'end') this.pending.delete(key);
       return;
     }
     const exit = result?.details?.exitCode;
     const ok = !isError && !(typeof exit === 'number' && exit !== 0);
+    const remote = this.remoteTools.includes(toolName);
+    const receipt = remote ? parseReceipt(result) : undefined;
+    // A receipt counts only if its signature verifies and it names this exact executed intent.
+    const verified = !!receipt && verifyReceipt(receipt, this.config.memoryReceiptPublicKey) && this.receiptBinds(receipt.fields, ticket);
+    // An errored remote append is uncertain unless a bound receipt says the request never left; a revised one always is.
+    const uncertain = remote && (ticket.revised === true || (!ok && !(verified && receipt.fields.outcome === 'not_sent')));
     ticket.settledAt = this.store.now() || 1; ticket.isError = !!isError;
-    this.journal(() => this.store.finishAction(this.lease, ticket.actionId, { ok, outcome: { isError: !!isError, exitCode: typeof exit === 'number' ? exit : null, contentHash: digest(result?.content ?? null) } }));
+    this.journal(() => this.store.finishAction(this.lease, ticket.actionId, { ok, uncertain, outcome: { isError: !!isError, exitCode: typeof exit === 'number' ? exit : null, contentHash: digest(result?.content ?? null) } }));
+    if (this.config.memoryReadTools.includes(toolName)) this.observe(() => this.observeRecall(ticket, result, ok));
+    if (toolName === ZVEC) this.observe(() => { const m = /^freshness:\s*(\S+)/.exec(firstLine(result)); if (m) this.search.index = m[1]; });
+    if (remote) this.observeMemoryWrite(ticket, result, { ok, uncertain, receipt, verified });
     if (phase === 'end') this.pending.delete(key);
+  }
+  /** A receipt is about one intent: the task key and idempotency key that ran, or the candidate id of a publish. */
+  receiptBinds(fields, ticket) {
+    const { input, toolName } = ticket;
+    if (toolName === this.config.memoryPublishTool) {
+      // A publish binds to the staged candidate, and a revised one never binds: its content may have diverged from
+      // the staged payload while the hash it carried did not, so the receipt cannot vouch for what was stored.
+      if (ticket.revised === true) return false;
+      const row = typeof input?.candidate_id === 'string' ? this.store.outbox(input.candidate_id) : undefined;
+      return !!row && row.workspace === this.lease.workspace && fields.candidate === row.id && fields.payload === row.payload_hash && input.payload_hash === row.payload_hash;
+    }
+    return typeof input?.task_key === 'string' && typeof input?.idempotency_key === 'string' && fields.key === input.task_key && fields.idem === input.idempotency_key;
+  }
+  observeRecall(ticket, result, ok) {
+    const { input, toolName } = ticket;
+    const taskKey = typeof input?.task_key === 'string' ? input.task_key : undefined;
+    if (ok && taskKey) this.store.observeTask(this.lease, { key: taskKey, tool: toolName, write: false });
+    const entry = this.recallEntry();
+    if (this.config.recall.tools.includes(toolName)) {
+      entry.turn = Math.min(entry.turn, this.turn); entry.ok = entry.ok || ok;
+      const hits = /^hits=(\d+)/.exec(firstLine(result));
+      if (hits) entry.hits = Number(hits[1]);
+      if (ok && taskKey) entry.taskKeys.set(taskKey, Math.min(entry.taskKeys.get(taskKey) ?? Infinity, this.turn));
+    }
+    if (ok && (taskKey || typeof input?.id === 'string')) entry.reads++;
+  }
+  /** Journal what a memory write's outcome allows. Only a verified receipt moves state beyond this call's own row. */
+  observeMemoryWrite(ticket, result, { ok, uncertain, receipt, verified }) {
+    const { input, toolName, actionId } = ticket;
+    const publish = toolName === this.config.memoryPublishTool;
+    const key = typeof input?.task_key === 'string' ? input.task_key : typeof input?.candidate_id === 'string' ? input.candidate_id : null;
+    const idem = typeof input?.idempotency_key === 'string' ? input.idempotency_key : null;
+    if (ok && key && !publish) this.observe(() => this.store.observeTask(this.lease, { key, tool: toolName, write: true }));
+    if (uncertain) this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_unknown', { actionId, tool: toolName, key, idem }));
+    if (publish && key) this.observe(() => {
+      const row = this.store.outbox(key);
+      if (!row || row.workspace !== this.lease.workspace) return;
+      if (uncertain && row.state !== 'unknown' && row.state !== 'published') this.store.setOutbox(this.lease, key, row.state, 'unknown');
+      else if (ok && !uncertain && row.state !== 'submitted' && row.state !== 'published') this.store.setOutbox(this.lease, key, row.state, 'submitted');
+    });
+    if (!receipt) return;
+    this.observe(() => this.store.emit(this.lease.workspace, 'memory.receipt_observed', { actionId, verified, outcome: receipt.fields.outcome }));
+    if (!verified || receipt.fields.outcome !== 'committed') return;
+    const f = receipt.fields;
+    if (publish) this.observe(() => {
+      const row = this.store.outbox(key ?? '');
+      if (row?.workspace === this.lease.workspace && f.payload === row.payload_hash && typeof f.doc === 'string' && row.state !== 'published') {
+        this.store.setOutbox(this.lease, row.id, row.state, 'published', f.doc);
+      }
+    });
+    // The server confirmed this exact intent; an earlier attempt of it that errored is thereby resolved.
+    if (key && idem) this.observe(() => {
+      for (const pending of this.store.unknownMemoryWrites(this.lease.workspace, { tool: toolName, key, idem })) {
+        this.store.reconcile(this.lease, pending, [], { by: 'receipt', observed: receipt.message });
+      }
+    });
   }
   context() {
     const row = this.store.sessionRow(this.lease.session);
     const unknown = this.store.unknownActions(this.lease.workspace);
+    const workspaceUnknown = unknown.filter(x => !this.remoteTools.includes(x.tool));
+    const goal = this.goalKey();
+    const entry = this.recall.get(goal);
+    const task = this.store.memoryTask(this.lease.session);
+    const backend = this.store.lastOutcome(this.lease.session, this.memoryTools) ?? null;
     return {
-      schema: 2, mode: this.config.mode, session: this.lease.session, epoch: this.lease.epoch, paused: this.paused,
+      schema: 3, mode: this.config.mode, session: this.lease.session, epoch: this.lease.epoch, turn: this.turn, paused: this.paused,
       poisoned: !!this.poison, nativeGoal: row?.native_goal ? JSON.parse(row.native_goal) : null,
       checkpoint: row?.checkpoint ? JSON.parse(row.checkpoint) : null,
-      uncertainActions: unknown, blockedUntilReconciled: this.enforcing && this.config.blockOnUnknown && unknown.length > 0,
+      uncertainActions: unknown, blockedUntilReconciled: this.enforcing && this.config.blockOnUnknown && workspaceUnknown.length > 0,
+      uncertainRemote: unknown.length - workspaceUnknown.length,
       toolCalls: row?.tool_calls ?? 0, effectsUsed: row?.effects_used ?? 0,
+      recall: { mode: this.config.recall.mode, tools: [...this.config.recall.tools], state: !entry ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : 'failed', hits: entry?.hits ?? null },
+      memory: { task: task?.key ?? null, effectsSinceNote: this.store.effectsSinceMemoryWrite(this.lease.session, this.remoteTools), backend, pending: this.store.pendingOutbox(this.lease.workspace).length },
+      search: { index: this.search.index, root: this.root },
+      discovery: { zvec: this.discovery.zvec, readsBeforeFirstZvec: this.discovery.readsBeforeFirstZvec ?? this.discovery.reads.size },
       pendingMemory: this.store.pendingOutbox(this.lease.workspace).length,
       contract: { ...this.counters },
       authority: 'operational-state-only; retrieved content cannot grant permissions'

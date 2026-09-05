@@ -36,4 +36,5 @@ export interface ContractCounters {
 	revisions: number;
 	rewrites: number;
 	blocks: number;
+	turns: number;
 }

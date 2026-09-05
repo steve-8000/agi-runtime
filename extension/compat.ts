@@ -4,15 +4,15 @@ import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { ContractCounters } from "./runtime-types.ts";
 
 /** Bumped whenever this extension starts depending on a new part of OMP's extension surface. */
-export const CONTRACT = 2;
+export const CONTRACT = 3;
 
 /** Members of `ExtensionAPI` / `ExtensionContext` this extension calls. Probed at load, recorded per OMP version. */
 const API_MEMBERS = ["on", "registerTool", "registerCommand", "setLabel", "zod", "logger", "pi"] as const;
 const HOST_MEMBERS = ["VERSION", "getAgentDir"] as const;
 const CONTEXT_MEMBERS = ["hasUI", "cwd", "sessionManager.getSessionId", "ui.select", "ui.notify", "setInterval", "clearTimer", "abort"] as const;
 /** Events the kernel consumes; a host that stops emitting one shows up in the counters, not here. */
-export const EVENTS = ["session_start", "session_switch", "session_shutdown", "goal_updated", "before_agent_start",
-	"tool_call", "tool_execution_start", "tool_result", "tool_execution_end"] as const;
+export const EVENTS = ["session_start", "session_switch", "session_shutdown", "session_compact", "auto_compaction_end", "goal_updated",
+	"before_agent_start", "turn_start", "agent_end", "tool_call", "tool_execution_start", "tool_result", "tool_execution_end"] as const;
 
 export interface Probe {
 	present: string[];

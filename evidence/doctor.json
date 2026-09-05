@@ -11,7 +11,7 @@
     {
       "name": "tested-version",
       "status": "tested",
-      "contract": 2,
+      "contract": 3,
       "tested": [
         "18.1.10"
       ]
@@ -27,31 +27,34 @@
       "path": "$HOME/.omp/runtime/config.json",
       "mode": "enforce",
       "headlessEffects": "allow",
-      "blockOnUnknown": true
+      "blockOnUnknown": true,
+      "recall": "require"
+    },
+    {
+      "name": "memory-receipts",
+      "status": "verifiable",
+      "writeTools": 4,
+      "publishTool": "mcp__clab_mem_mem_publish"
     },
     {
       "name": "compat-report",
       "status": "ok",
-      "at": "2026-09-04T23:18:21.275Z",
-      "contract": 2,
+      "at": "2026-09-05T14:16:25.183Z",
+      "contract": 3,
       "missing": [],
       "counters": {
-        "intents": 50,
-        "starts": 50,
-        "results": 50,
-        "ends": 50,
+        "intents": 2,
+        "starts": 2,
+        "results": 2,
+        "ends": 2,
         "unmatchedStarts": 0,
         "unmatchedResults": 0,
         "revisions": 0,
         "rewrites": 0,
-        "blocks": 0
+        "blocks": 0,
+        "turns": 3
       },
       "attachError": null
-    },
-    {
-      "name": "canonical-memory-transport",
-      "status": "unbound",
-      "reason": "publication fails closed until a transport with server-enforced idempotency is bound"
     }
   ]
 }

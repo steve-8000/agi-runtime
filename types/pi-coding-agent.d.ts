@@ -39,7 +39,8 @@ declare module "@oh-my-pi/pi-coding-agent" {
 		waitForIdle(): Promise<void>;
 	}
 
-	export interface SessionEvent { type: "session_start" | "session_switch" | "session_shutdown" }
+	export interface SessionEvent { type: "session_start" | "session_switch" | "session_shutdown" | "session_compact" }
+	export interface LifecycleEvent { type: "turn_start" | "agent_end" | "auto_compaction_end" }
 	export interface GoalUpdatedEvent { type: "goal_updated"; goal: { id?: string; status?: string } | null }
 	export interface BeforeAgentStartEvent { type: "before_agent_start"; prompt: string; systemPrompt: string[] }
 	export interface BeforeAgentStartEventResult {
@@ -82,7 +83,8 @@ declare module "@oh-my-pi/pi-coding-agent" {
 		getAgentDir(): string;
 	}
 	export interface ExtensionAPI {
-		on(event: "session_start" | "session_switch" | "session_shutdown", handler: Handler<SessionEvent>): void;
+		on(event: "session_start" | "session_switch" | "session_shutdown" | "session_compact", handler: Handler<SessionEvent>): void;
+		on(event: "turn_start" | "agent_end" | "auto_compaction_end", handler: Handler<LifecycleEvent>): void;
 		on(event: "goal_updated", handler: Handler<GoalUpdatedEvent>): void;
 		on(event: "before_agent_start", handler: Handler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 		on(event: "tool_call", handler: Handler<ToolCallEvent, ToolCallEventResult>): void;

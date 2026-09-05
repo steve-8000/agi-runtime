@@ -89,8 +89,9 @@ test('zvec search is a plain read: its input passes through untouched and counts
   assert.equal(await run(f.kernel, c), undefined);
   const row = action(f, c); assert.equal(row.is_effect, 0); assert.equal(row.state, 'succeeded'); assert.equal(row.input_hash, digest(input));
   assert.equal(f.kernel.counters.revisions, 0);
-  assert.deepEqual(f.store.events(f.workspace.id).filter(e => e.kind.startsWith('search.')), []);
-  const ctx = f.kernel.context(); assert.equal(ctx.toolCalls, 1); assert.equal(ctx.effectsUsed, 0);
+  // Scope-widening flags are journaled for audit, exactly like a sensitive read; nothing is stripped or blocked.
+  assert.deepEqual(f.store.events(f.workspace.id).filter(e => e.kind.startsWith('search.')).map(e => e.payload.flags), [['hidden', 'noIgnore', 'follow']]);
+  const ctx = f.kernel.context(); assert.equal(ctx.toolCalls, 1); assert.equal(ctx.effectsUsed, 0); assert.equal(ctx.discovery.zvec, 1);
 });
 test('a failed or interrupted zvec search is a read failure, never uncertainty or poison', async t => {
   const f = await fixture(t); const search = id => call({ toolCallId: id, toolName: 'mcp__zvec_grep_search', input: { root: f.root, query: 'q' } });

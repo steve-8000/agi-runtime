@@ -1,2 +1,2 @@
-{"check":"javascript-syntax","files":22,"status":"passed"}
+{"check":"javascript-syntax","files":23,"status":"passed"}
 {"check":"extension-typescript","status":"passed","scope":"against types/pi-coding-agent.d.ts, not a full OMP typecheck"}

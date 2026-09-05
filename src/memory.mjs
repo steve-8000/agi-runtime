@@ -1,52 +1,54 @@
-import { check, digest, withDeadline, abortable } from './util.mjs';
+import { createPublicKey, verify } from 'node:crypto';
+import { check, stable } from './util.mjs';
 import { verifyEvidence } from './evidence.mjs';
 
-// Transport is deliberately injected. Reuse the connected clab-mem / OMP MCP transport;
-// this package neither guesses private HTTP endpoints nor adds a second MCP client.
-export class CanonicalMemoryPort {
-  constructor({ capabilities, write, lookup, validate }) {
-    check(capabilities?.idempotency === 'server-enforced', 'REMOTE_IDEMPOTENCY_REQUIRED');
-    check(capabilities?.durableAck === true, 'DURABLE_ACK_REQUIRED');
-    check(typeof write === 'function' && typeof lookup === 'function' && typeof validate === 'function', 'MEMORY_CONTRACT_REQUIRED');
-    this.write = write; this.lookup = lookup; this.validate = validate;
-    this.capabilities = Object.freeze({ ...capabilities });
+// The model is the only transport to canonical memory: this process cannot call an MCP tool
+// (ctx.invokeTool delegates to a same-named built-in only) and, on this host, cannot even open a
+// TCP connection to mem.clab.one. What this module owns is verification: a receipt the clab-mem
+// server signed is the one piece of tool output that may move journal state. Everything else a
+// tool returns is telemetry.
+
+const RECEIPT_PREFIX = 'receipt ';
+const TOKEN = /^([a-z_]+)=(\S+)$/;
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g;
+const OUTCOMES = ['committed', 'not_sent'];
+
+/** First line of a tool result if it is a receipt: `receipt outcome=… key=… sig=…`. Unverified until `verifyReceipt`. */
+export function parseReceipt(result) {
+  const text = result?.content?.find(part => part?.type === 'text')?.text;
+  if (typeof text !== 'string') return undefined;
+  const line = text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n'));
+  if (!line.startsWith(RECEIPT_PREFIX) || line.length > 2048) return undefined;
+  const fields = {};
+  for (const token of line.slice(RECEIPT_PREFIX.length).split(' ')) {
+    const m = TOKEN.exec(token);
+    if (!m || m[1] in fields) return undefined;
+    fields[m[1]] = m[2];
   }
+  if (!OUTCOMES.includes(fields.outcome) || typeof fields.sig !== 'string') return undefined;
+  const cut = line.lastIndexOf(' sig=');
+  return { fields, message: line.slice(0, cut), signature: fields.sig };
 }
-function evidenceIsCurrent(store, workspace, root, ids) {
+
+/** Ed25519 over the receipt line without its signature. The public key is operator config; a mismatch is telemetry, never a transition. */
+export function verifyReceipt(receipt, publicKeyHex) {
+  if (!receipt || !publicKeyHex) return false;
+  try {
+    const key = createPublicKey({ format: 'jwk', key: { kty: 'OKP', crv: 'Ed25519', x: Buffer.from(publicKeyHex, 'hex').toString('base64url') } });
+    return verify(null, Buffer.from(receipt.message, 'utf8'), key, Buffer.from(receipt.signature, 'base64url'));
+  } catch { return false; }
+}
+
+export function evidenceIsCurrent(store, workspace, root, ids) {
   store.assertEvidence(workspace, ids);
   for (const evidenceId of ids) {
-    const row = store.db.prepare('SELECT record FROM evidence WHERE id=?').get(evidenceId);
-    check(verifyEvidence(root, JSON.parse(row.record)), 'STALE_MEMORY_EVIDENCE');
+    const row = store.evidence(evidenceId);
+    check(row && verifyEvidence(root, row.record), 'STALE_EVIDENCE');
   }
 }
-export async function publishCandidate(store, lease, root, candidateId, port, { signal, timeoutMs = 15000 } = {}) {
-  check(port instanceof CanonicalMemoryPort, 'MEMORY_PORT_UNBOUND');
-  const row = store.outbox(candidateId);
-  check(row?.workspace === lease.workspace && row.state === 'approved', 'MEMORY_NOT_APPROVED');
-  const payload = JSON.parse(row.payload);
-  evidenceIsCurrent(store, lease.workspace, root, payload.evidenceIds);
-  check(digest(payload) === row.payload_hash && port.validate(payload) === true && digest(payload) === row.payload_hash, 'MEMORY_SCHEMA_MISMATCH');
-  store.setOutbox(lease, candidateId, 'approved', 'sending');
-  try {
-    const deadline = withDeadline(signal, timeoutMs);
-    const receipt = await abortable(() => port.write({ idempotencyKey: candidateId, payloadHash: row.payload_hash, payload }, deadline), deadline);
-    check(receipt?.idempotencyKey === candidateId && receipt?.payloadHash === row.payload_hash && receipt?.durable === true && typeof receipt?.remoteId === 'string' && receipt.remoteId.length > 0, 'INVALID_MEMORY_ACK');
-    store.setOutbox(lease, candidateId, 'sending', 'acked', receipt.remoteId);
-    return receipt;
-  } catch (error) {
-    // An HTTP timeout is not proof that the server did not commit. Never blind-retry.
-    try { store.setOutbox(lease, candidateId, 'sending', 'unknown'); } catch { /* lease loss is recovered by next acquire */ }
-    throw error;
-  }
-}
-export async function reconcileMemory(store, lease, candidateId, port, { signal, timeoutMs = 15000 } = {}) {
-  check(port instanceof CanonicalMemoryPort, 'MEMORY_PORT_UNBOUND');
-  const row = store.outbox(candidateId);
-  check(row?.workspace === lease.workspace && row.state === 'unknown', 'OUTBOX_STATE_CONFLICT');
-  const deadline = withDeadline(signal, timeoutMs);
-  const receipt = await abortable(() => port.lookup(candidateId, deadline), deadline);
-  if (!receipt) return { state: 'unknown', retryAllowed: false };
-  check(receipt.idempotencyKey === candidateId && receipt.payloadHash === row.payload_hash && receipt.durable === true && typeof receipt.remoteId === 'string' && receipt.remoteId.length > 0, 'INVALID_MEMORY_ACK');
-  store.setOutbox(lease, candidateId, 'unknown', 'acked', receipt.remoteId);
-  return { state: 'acked', remoteId: receipt.remoteId };
+/** Evidence receipts a memory write cites anywhere in its input. A citation of a changed file is refused before it is sent. */
+export function citedEvidence(store, workspace, input) {
+  const ids = new Set();
+  for (const candidate of stable(input ?? null).match(UUID) ?? []) if (store.evidence(candidate)?.workspace === workspace) ids.add(candidate);
+  return [...ids];
 }

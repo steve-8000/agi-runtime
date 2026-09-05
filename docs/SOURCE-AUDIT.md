@@ -24,11 +24,13 @@
 
 `~/.omp/agent/mcp.json`: 서버 `clab-mem` = `bun run <clab-mem checkout>/mcp/server.ts`. OMP는 MCP 도구를 `mcp__<server>_<tool>`로 노출하며 이 세션의 라우트 목록이 `mcp__clab_mem_mem_read` 등을 그대로 보인다.
 
-`mcp/server.ts` 도구 정의(L156-365): `mem_task_start`(key find-or-create, 멱등), `mem_task_note`(append, key 없으면 실패), `mem_task_complete`(read-back 검증), `mem_task_read`, `mem_task_lookup`, `mem_search`, `mem_read`, `mem_supersede`, `mem_status`. 읽기 다섯 개가 `memoryReadTools` 기본값이다. 쓰기 네 개는 효과다.
+`mcp/server.ts` 도구 정의: `mem_task_start`(key find-or-create; 기존 키에는 `재개` 절 append), `mem_task_note`(append, key 없으면 실패), `mem_task_complete`(read-back 검증), `mem_supersede`(배너 + `폐기` 절 append), `mem_task_read`, `mem_task_lookup`, `mem_search`, `mem_read`, `mem_status`, 그리고 이번에 추가한 `mem_publish`. 읽기 다섯 개가 `memoryReadTools`, 쓰기 네 개가 `memoryWriteTools`, `mem_publish`가 `memoryPublishTool`이다. **쓰기 네 개 전부 문서 RMW append**다 — `start`도 `supersede`도 멱등이 아니다.
 
-`skill://clab-mem`: append-only, `mem_task_complete`는 2xx를 성공 근거로 삼지 않음, 임베딩 지연이 파이프라인을 멈출 수 있음(실측). → 후보 게시의 lookup 기반 dedupe는 신뢰 불가 → 전송 미바인딩(`ARCHITECTURE.md` §6).
+이번 변경(clab-mem `mcp/commit.ts`, `mcp/receipt.ts`, `mcp/server.ts`): Utopia ingest에 조건부 갱신이 없고(`references/utopia-api.md`: `{filename, content, external_id, doc_time}`뿐) 청크는 비동기이며 로컬 캐시는 기계 단위 파일이다. 그래서 (1) 쓰기마다 `idempotency_key` 필수, 절에 `<!-- idem: … -->` 마커, 바탕에 마커가 있으면 `duplicate`; (2) `~/.clab-mem/locks/<key>.lock`으로 같은 기계 직렬화(소유자 토큰·heartbeat·rename 탈취·토큰 일치 시만 해제); (3) 바탕은 캐시 sha == 문서 행 sha일 때만 캐시, 아니면 `ready` 대기 후 청크 복원을 `render(parse(·))`로 정규화해 그 sha가 행 sha와 같을 때만(실측 80건 중 79건; 어긋나면 쓰지 않고 오류); (4) 민 뒤 행 sha 재확인, 덮어쓰였으면 마커 확인 후 재적용(최대 4회, 실패는 오류); (5) 결과 첫 줄에 Ed25519 서명 receipt(`~/.clab-mem/receipt-signing.key`, `bun mcp/receipt.ts`로 생성). curl exit 6/7/35에만 `outcome=not_sent`.
 
-이 세션에서 `mem_search`는 `Unable to connect`(bun 1.4.0 회귀 의심)로 실패했다. 메모리 recall/record는 수행하지 못했다.
+`skill://clab-mem`: append-only, `mem_task_complete`는 2xx를 성공 근거로 삼지 않음, 임베딩 지연이 파이프라인을 멈출 수 있음(실측). `references/transport.md`: 이 맥에서 bun/node/python은 `mem.clab.one`에 TCP 연결 불가, 전송은 `/usr/bin/curl` — 런타임이 전송을 소유할 수 없는 결정적 이유. 스킬 문서(`~/.omp/agent/skills/clab-mem/SKILL.md`)는 아직 `idempotency_key`·`mem_publish`·receipt를 모른다 — 이 저장소는 `~/.omp/agent/*`를 수정하지 않으므로 운영자 갱신 항목이다.
+
+이 세션에서 `mem_search`·`mem_task_lookup`은 정상 응답했다(`hits=10 embedding=Qwen3-Embedding-0.6B-8bit`, `docs=1085`). 이 저장소에 대한 기록은 0건이었고, 작업 기록 `agi-runtime-autonomy-cutover`를 시작했다.
 
 ## zvec-grep
 

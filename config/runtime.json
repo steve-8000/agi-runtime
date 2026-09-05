@@ -10,6 +10,23 @@
     "mcp__clab_mem_mem_task_lookup",
     "mcp__clab_mem_mem_task_read"
   ],
+  "memoryWriteTools": [
+    "mcp__clab_mem_mem_task_start",
+    "mcp__clab_mem_mem_task_note",
+    "mcp__clab_mem_mem_task_complete",
+    "mcp__clab_mem_mem_supersede"
+  ],
+  "memoryTaskStartTool": "mcp__clab_mem_mem_task_start",
+  "memoryPublishTool": "mcp__clab_mem_mem_publish",
+  "memoryReceiptPublicKey": "",
+  "recall": {
+    "mode": "require",
+    "tools": [
+      "mcp__clab_mem_mem_search",
+      "mcp__clab_mem_mem_task_lookup",
+      "mcp__clab_mem_mem_task_read"
+    ]
+  },
   "structuredOperationTools": [],
   "targets": {}
 }
