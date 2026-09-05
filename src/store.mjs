@@ -31,7 +31,8 @@ export class RuntimeStore {
     }
     const db = await openDatabase(path);
     if (path !== ':memory:') chmodSync(path, 0o600);
-    return new RuntimeStore(db, now);
+    try { return new RuntimeStore(db, now); }
+    catch (error) { try { db.close(); } catch { /* the original failure is the one to report */ } throw error; }
   }
   constructor(db, now) {
     this.db = db; this.now = now;
@@ -42,21 +43,26 @@ export class RuntimeStore {
       // v2 outbox states described a runtime-owned transport (approved/sending/acked). SQLite cannot
       // alter a CHECK, so the table is rebuilt; an in-flight `sending` row is what an interrupted
       // publish looks like now, and `acked` rows were verified receipts.
-      db.exec(`
-        BEGIN IMMEDIATE;
-        CREATE TABLE outbox_v3 (
-          id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
-          payload TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ${OUTBOX_STATES}),
-          remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
-        );
-        INSERT INTO outbox_v3 SELECT id,workspace,session,payload,payload_hash,
-          CASE state WHEN 'approved' THEN 'candidate' WHEN 'sending' THEN 'unknown' WHEN 'acked' THEN 'published' ELSE state END,
-          remote_id,created,updated FROM outbox;
-        DROP TABLE outbox;
-        ALTER TABLE outbox_v3 RENAME TO outbox;
-        PRAGMA user_version=3;
-        COMMIT;
-      `);
+      // One statement per call: bun:sqlite's multi-statement exec swallows a constraint failure and runs on,
+      // which would DROP the old table and COMMIT an empty one. Prepared statements throw in both engines.
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const statement of [
+          `CREATE TABLE outbox_v3 (
+            id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
+            payload TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ${OUTBOX_STATES}),
+            remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
+          )`,
+          `INSERT INTO outbox_v3 SELECT id,workspace,session,payload,payload_hash,
+            CASE state WHEN 'approved' THEN 'candidate' WHEN 'sending' THEN 'unknown' WHEN 'acked' THEN 'published' ELSE state END,
+            remote_id,created,updated FROM outbox`,
+          'DROP TABLE outbox', 'ALTER TABLE outbox_v3 RENAME TO outbox', 'PRAGMA user_version=3'
+        ]) db.prepare(statement).run();
+        db.exec('COMMIT');
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch { /* the failed statement may already have ended the transaction */ }
+        throw error;
+      }
     }
     db.exec(`
       CREATE TABLE IF NOT EXISTS workspaces (

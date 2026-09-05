@@ -211,4 +211,18 @@ test('a v2 journal is migrated: transport states become candidate, unknown and p
   const store = await RuntimeStore.open(path); t.after(() => store.close());
   assert.deepEqual(store.db.prepare('SELECT id,state,remote_id FROM outbox ORDER BY id').all().map(r => [r.id, r.state, r.remote_id]), [['a', 'candidate', null], ['b', 'unknown', null], ['c', 'published', 'remote-1']]);
   assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 3);
+  // A row the new table cannot accept (orphan workspace under foreign keys) rolls the whole migration back.
+  const broken = join(f.base, 'broken.sqlite'); const b = await openDatabase(broken);
+  b.exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY, root TEXT UNIQUE NOT NULL, paused INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE outbox (id TEXT PRIMARY KEY, workspace TEXT NOT NULL, session TEXT NOT NULL, payload TEXT NOT NULL, payload_hash TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('candidate','approved','sending','acked','unknown','rejected')), remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL);
+    INSERT INTO outbox VALUES ('orphan','missing-workspace','s','{}','h','approved',NULL,1,1);
+    PRAGMA user_version=2;`);
+  b.close();
+  await assert.rejects(RuntimeStore.open(broken));
+  const again = await openDatabase(broken);
+  assert.equal(again.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.deepEqual(again.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'outbox%' ORDER BY name").all().map(r => r.name), ['outbox']);
+  assert.equal(again.prepare('SELECT state FROM outbox').get().state, 'approved');
+  again.close();
 });
