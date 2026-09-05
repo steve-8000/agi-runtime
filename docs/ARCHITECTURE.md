@@ -79,12 +79,12 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 workspaces(id, root, paused)
 sessions(id, workspace, epoch, expires, has_ui, tool_calls, effects_used, native_goal, checkpoint)
 actions(id, workspace, session, epoch, tool, input_hash, is_effect, state, outcome_hash)
-events, evidence, outbox(+session), approvals(+session)
+events, evidence, approvals(+session)
 ```
 
 사용자는 같은 저장소에서 여러 OMP 터미널을 동시에 연다(`~/.omp/agent/sessions/` 참조). 그래서 **lease는 세션 단위**다: 같은 세션을 두 프로세스가 동시에 잡는 것만 `SESSION_WRITER_BUSY`로 거절하고, 다른 세션은 하나의 workspace 저널을 공유한다. workspace 전체에 걸치는 사실은 둘뿐이다 — `paused`, 그리고 해소되지 않은 `unknown`. 둘 다 같은 working tree를 건드리는 모든 세션에 관계가 있다.
 
-`sweep(workspace)`는 `expires ≤ now`인 세션의 `executing` 효과를 `unknown`, 읽기를 `failed`, `sending` outbox를 `unknown`으로 옮긴다. acquire 시점과 매 효과 intent 직전에 **별도 트랜잭션으로** 실행한다 — intent 거절(`RECONCILIATION_REQUIRED`, `DUPLICATE_ACTION`)로 롤백되어도 lapse 발견은 남아야 한다. 살아 있는 형제 세션의 `executing`은 건드리지 않는다.
+`sweep(workspace)`는 `expires ≤ now`인 세션의 `executing` 효과를 `unknown`, 읽기를 `failed`로 옮긴다. acquire 시점과 매 효과 intent 직전에 **별도 트랜잭션으로** 실행한다 — intent 거절(`RECONCILIATION_REQUIRED`, `DUPLICATE_ACTION`)로 롤백되어도 lapse 발견은 남아야 한다. 살아 있는 형제 세션의 `executing`은 건드리지 않는다.
 
 액션 ID는 `digest({session, tool, toolCallId})`. 같은 ID의 재디스패치는 거절한다(과거 성공을 재사용하는 것은 임의 도구에 안전하지 않다). 재개는 epoch만 올리고 사용량 카운터(`tool_calls`, `effects_used`)는 이어진다. 카운터는 관측용이다 — 상한도, 갱신 명령도 없다. 사람이 있는 세션이든 무인이든 카운터가 작업을 멈추는 경로는 두지 않는다.
 
@@ -92,7 +92,7 @@ events, evidence, outbox(+session), approvals(+session)
 
 `unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다(schema 변경 없이 유도). workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다 — 다시 쓰면 같은 사실이 두 번 들어갈 수 있기 때문이다. 예외는 없다: 읽어서 확인한 뒤 attestation으로 닫는다.
 
-메모리에 관한 사실은 저장하지 않고 저널에서 유도한다: `memoryTask`(이 세션이 마지막으로 start/note/complete한 키)는 `memory.task_observed` 이벤트에서, `effectsSinceNote`는 마지막 메모리 쓰기 행 이후의 settle된 효과 수에서(`rowid` 경계 — 한 tick에 여러 행이 들어온다). crash 뒤에도 resume card가 같은 값을 낸다.
+메모리에 관한 사실은 저장하지 않고 저널에서 유도한다: `effectsSinceNote`는 마지막 메모리 쓰기 행 이후의 settle된 효과 수다(`rowid` 경계 — 한 tick에 여러 행이 들어온다). `xd://` 봉투로 디스패치된 쓰기도 저널 행의 도구 이름이 실행될 도구이므로 같은 계산에 들어온다. crash 뒤에도 resume card가 같은 값을 낸다.
 
 ## 5. 정책
 

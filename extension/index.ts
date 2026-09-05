@@ -16,7 +16,7 @@ import type { Lease, ConfirmRequest, UncertainAction } from "./runtime-types.ts"
 // the kernel degrades to observation; with OMP_RUNTIME_REQUIRED=1 it fails closed instead.
 //
 // Authority: the agent holds it. The runtime is observer, gatekeeper and ledger — it forces the
-// procedure (recall before the first effect, read-back before a retry, a verified receipt before a
+// procedure (recall before the first effect, read-back before a retry, a current citation before an
 // uncertain write is closed by reading the record back) and never starts a turn of its own. The only human approval left
 // is Kubernetes outside clab-cluster, which kubernetes-approval.ts and the structured policy own.
 //

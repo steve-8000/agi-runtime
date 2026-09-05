@@ -86,3 +86,20 @@ test('an unsupported schema version refuses to open rather than guessing', async
   raw.close();
   await assert.rejects(RuntimeStore.open(path), code('UNSUPPORTED_SCHEMA'));
 });
+
+test('a canonical-memory write dispatched through an xd:// envelope is scoped as a remote write', async t => {
+  const f = await fixture(t, { config: config() });
+  const envelope = call({ toolCallId: 'x1', toolName: 'write', input: { path: `xd://${T.remember}`, content: JSON.stringify({ fact: 'a', provenance: 'chat' }) } });
+  // The envelope errors the way the device would when the write did not answer.
+  await run(f.kernel, envelope, { isError: true });
+  assert.equal(action(f, envelope).state, 'unknown', 'the envelope inherits the target: an errored memory write is uncertain');
+  assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'memory.write_unknown').length, 1);
+  assert.equal(f.kernel.context().uncertainRemote, 1, 'scoped as remote, not as a working-tree write');
+  assert.match((await f.kernel.intent(write('w1', { fact: 'b', provenance: 'chat' }))).reason, /MEMORY_BACKEND_DEGRADED|RECONCILIATION_REQUIRED/, 'further memory writes wait');
+});
+
+test('a credential inside an xd:// envelope is refused before the device runs', async t => {
+  const f = await fixture(t, { config: config() });
+  const envelope = call({ toolCallId: 'x2', toolName: 'write', input: { path: `xd://${T.remember}`, content: JSON.stringify({ fact: 'token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', provenance: 'chat' }) } });
+  assert.match((await f.kernel.intent(envelope)).reason, /MEMORY_SECRET/);
+});

@@ -28,7 +28,7 @@ function dispatched(call) {
 
 export function classify(call, config = {}, root, hop = 0) {
   const device = hop === 0 ? dispatched(call) : null;
-  if (device) return classify(device, config, root, 1);
+  if (device) return { ...classify(device, config, root, 1), dispatchedTo: device.toolName };
   const { toolName, input } = call;
   if (toolName === 'write' && root && ordinaryWorkspaceWrite(root, input)) return { kind: 'workspace-write' };
   if (PATH_EDIT_TOOLS.has(toolName) && root && ordinaryWorkspacePath(root, input?.path)) return { kind: 'workspace-write' };

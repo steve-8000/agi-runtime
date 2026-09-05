@@ -107,11 +107,11 @@ test('an xd:// dispatch is classified as the tool it dispatches, never as the en
   const f = await fixture(t);
   const cfg = { memoryReadTools: ['mcp__gbrain_recall'] };
   const dev = (tool, args) => classify(call({ toolName: 'write', input: { path: `xd://${tool}`, content: JSON.stringify(args) } }), cfg, f.root);
-  assert.deepEqual(dev('mcp__zvec_grep_search', { root: f.root, query: 'q' }), { kind: 'read' });
-  assert.deepEqual(dev('mcp__gbrain_recall', { query: 'q' }), { kind: 'read', source: 'canonical-memory' });
-  assert.deepEqual(dev('ast_edit', { path: 'source.txt' }), { kind: 'workspace-write' });
-  assert.deepEqual(dev('mcp__gbrain_remember', { task_key: 'k' }), { kind: 'opaque-exec' }, 'a dispatched write stays an effect');
-  assert.deepEqual(classify(call({ toolName: 'write', input: { path: `xd://mcp__zvec_grep_search`, content: 'not json' } }), cfg, f.root), { kind: 'read' }, 'malformed args still classify by target');
+  assert.deepEqual(dev('mcp__zvec_grep_search', { root: f.root, query: 'q' }), { kind: 'read', dispatchedTo: 'mcp__zvec_grep_search' });
+  assert.deepEqual(dev('mcp__gbrain_recall', { query: 'q' }), { kind: 'read', source: 'canonical-memory', dispatchedTo: 'mcp__gbrain_recall' });
+  assert.deepEqual(dev('ast_edit', { path: 'source.txt' }), { kind: 'workspace-write', dispatchedTo: 'ast_edit' });
+  assert.deepEqual(dev('mcp__gbrain_remember', { fact: 'x' }), { kind: 'opaque-exec', dispatchedTo: 'mcp__gbrain_remember' }, 'a dispatched write stays an effect');
+  assert.deepEqual(classify(call({ toolName: 'write', input: { path: `xd://mcp__zvec_grep_search`, content: 'not json' } }), cfg, f.root), { kind: 'read', dispatchedTo: 'mcp__zvec_grep_search' }, 'malformed args still classify by target');
   assert.deepEqual(classify(call({ toolName: 'write', input: { path: 'new.txt', content: 'x' } }), cfg, f.root), { kind: 'workspace-write' }, 'a plain file write is untouched');
 });
 test('ordinary literal workspace writes and in-tree edits are workspace-write; the rest is opaque', async t => {

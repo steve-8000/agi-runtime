@@ -33,7 +33,7 @@
     },
     {
       "tool": "mcp__gbrain_remember",
-      "blocked": "RECONCILIATION_REQUIRED: uncertain: b8eb7099e3f2 mcp__gbrain_remember; read back the real state, then runtime_reconcile (a memory write may be re-issued with its own idempotency_key)"
+      "blocked": "RECONCILIATION_REQUIRED: uncertain: b8eb7099e3f2 mcp__gbrain_remember; read back the real state, then runtime_reconcile with what you observed"
     },
     {
       "tool": "mcp__gbrain_remember",
@@ -59,7 +59,7 @@
     },
     "checkpoint": {
       "evidenceIds": [
-        "ba1dab53-2ba0-44e7-9db6-8c63aa0b662a"
+        "d22bc325-a35e-4e1c-85e8-ce1ba003a791"
       ],
       "nextAction": "사실 기록",
       "summary": "현재 원문을 확인했다."
@@ -85,7 +85,7 @@
     },
     "search": {
       "index": null,
-      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-s55hgO/workspace"
+      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-K4VAyX/workspace"
     },
     "discovery": {
       "zvec": 0,

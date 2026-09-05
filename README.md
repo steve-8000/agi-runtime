@@ -95,7 +95,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 ## 검증
 
 ```sh
-node --experimental-strip-types --test tests/*.test.mjs   # 76 tests
+node --experimental-strip-types --test tests/*.test.mjs   # 78 tests
 node scripts/check.mjs                                    # JS syntax + tsc (types/pi-coding-agent.d.ts 기준)
 node scripts/demo.mjs                                     # offline: recall gate → uncertain write → read-back attestation
 ```
@@ -105,7 +105,7 @@ node scripts/demo.mjs                                     # offline: recall gate
 ## 아직 아닌 것
 
 - **런타임은 정본 메모리에 직접 쓰지 않는다.** 이 프로세스는 MCP 도구를 호출할 수 없다(`ctx.invokeTool`은 같은 이름의 built-in 위임뿐). 전송 주체는 모델이고 이 계층은 검증·게이트·원장이다(`docs/ARCHITECTURE.md` §6).
-- **결과 본문으로 상태를 바꾸지 않는다.** 메모리 쓰기의 성공 응답도 저널을 닫지 않는다: 불명은 read-back 뒤의 attestation으로만 닫힌다. `doctor`의 `memory-tools`는 도구 목록과 recall 모드만 확인한다.
+- **결과 본문으로 상태를 바꾸지 않는다.** 성공·실패는 호출의 `isError`와 exit code로만 판정하고 결과 텍스트는 telemetry다. 오류나 입력 변경으로 `unknown`이 된 메모리 쓰기는 read-back 뒤의 attestation으로만 닫힌다. `doctor`의 `memory-tools`는 도구 목록과 recall 모드만 확인한다.
 - **Kubernetes/GitOps 구조화 정책의 resolver/broker 없음.** `structuredOperationTools`/`targets`는 테스트된 정책 seam이지만 연결된 어댑터가 없다. 현재 클러스터 승인은 전적으로 `kubernetes-approval.ts`다.
 - **격리 아님.** in-process 확장은 같은 프로세스의 다른 코드를 막지 못한다. OS sandbox/credential broker의 대체재가 아니다.
 

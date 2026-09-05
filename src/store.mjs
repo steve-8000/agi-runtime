@@ -179,7 +179,7 @@ export class RuntimeStore {
    * by either kind (re-issuing it could duplicate an append the server already committed).
    * Usage counters (tool_calls, effects_used) are observation only; nothing here caps them.
    */
-  beginAction(lease, { actionId, tool, input, isEffect = true, blockOnUnknown = false, remoteTools = [] }) {
+  beginAction(lease, { actionId, tool, input, isEffect = true, blockOnUnknown = false, remoteTools = [], remote = remoteTools.includes(tool) }) {
     // The sweep commits on its own: a refused intent must not roll back the discovery of lapsed work.
     if (isEffect) this.transaction(() => this.sweep(lease.workspace));
     return this.transaction(() => {
@@ -187,9 +187,8 @@ export class RuntimeStore {
       // Returning a prior success is unsafe for arbitrary tools. All repeated dispatches are rejected.
       check(!this.db.prepare('SELECT 1 FROM actions WHERE id=?').get(actionId), 'DUPLICATE_ACTION');
       if (isEffect && blockOnUnknown) {
-        const remote = remoteTools.includes(tool);
         const blocking = this.unknownActions(lease.workspace).filter(x => remote || !remoteTools.includes(x.tool));
-        check(blocking.length === 0, 'RECONCILIATION_REQUIRED', `uncertain: ${blocking.map(x => `${x.id.slice(0, 12)} ${x.tool}`).join(', ')}; read back the real state, then runtime_reconcile (a memory write may be re-issued with its own idempotency_key)`);
+        check(blocking.length === 0, 'RECONCILIATION_REQUIRED', `uncertain: ${blocking.map(x => `${x.id.slice(0, 12)} ${x.tool}`).join(', ')}; read back the real state, then runtime_reconcile with what you observed`);
       }
       this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(isEffect ? 1 : 0, this.now(), lease.session);
       const inputHash = digest(input);

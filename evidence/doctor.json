@@ -40,20 +40,20 @@
     {
       "name": "compat-report",
       "status": "ok",
-      "at": "2026-09-05T21:49:21.113Z",
+      "at": "2026-09-05T21:52:52.810Z",
       "contract": 3,
       "missing": [],
       "counters": {
-        "intents": 2,
-        "starts": 2,
-        "results": 2,
-        "ends": 2,
+        "intents": 0,
+        "starts": 0,
+        "results": 0,
+        "ends": 0,
         "unmatchedStarts": 0,
         "unmatchedResults": 0,
         "revisions": 0,
         "rewrites": 0,
         "blocks": 0,
-        "turns": 3
+        "turns": 0
       },
       "attachError": null
     }

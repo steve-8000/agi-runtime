@@ -123,6 +123,9 @@ export class RuntimeKernel {
       const policy = decision(call, op, this.config);
       check(policy.allow, policy.reason ?? 'DENIED');
       const effect = isEffect(op);
+      // An xd:// envelope carries the semantics of what it dispatches: the canonical-memory gates and
+      // the unknown scope must follow that name, not the envelope's.
+      const effective = op.dispatchedTo ?? toolName;
       if (effect) check(!this.paused, 'RUNTIME_PAUSED', '/runtime resume 후 계속하십시오');
       if (toolName === 'read' && sensitiveRead(this.root, input?.path)) this.store.emit(this.lease.workspace, 'read.sensitive', { toolCallId, path: input.path });
       if (toolName === 'read' && this.discovery.readsBeforeFirstZvec === null && typeof input?.path === 'string') this.discovery.reads.add(input.path);
@@ -131,7 +134,7 @@ export class RuntimeKernel {
         const flags = SCOPE_FLAGS.filter(flag => input?.[flag] === true);
         if (flags.length) this.store.emit(this.lease.workspace, 'search.scope', { toolCallId, flags });
       }
-      if (this.remoteTools.includes(toolName)) this.memoryWriteGate(call);
+      if (this.remoteTools.includes(effective)) this.memoryWriteGate({ ...call, toolName: effective });
       if (effect && this.enforcing) this.recallGate();
       if (effect) this.freezeDiscovery();
       if (policy.requiresApproval) {
@@ -145,8 +148,11 @@ export class RuntimeKernel {
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
       const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
-      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools }));
-      this.pending.set(key, { actionId, toolName, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
+      // The row records the tool that runs, so every later reader (unknown scope, resume card,
+      // effects-since-write) sees a dispatched canonical-memory write as one. The action id keeps the
+      // envelope's own name, so the nested call's row stays distinct.
+      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: effective, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools }));
+      this.pending.set(key, { actionId, toolName, effective, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
       return undefined;
     } catch (error) {
       if (error instanceof RuntimeFault) return this.block(key, `${error.code}: ${error.message}`);
@@ -165,7 +171,7 @@ export class RuntimeKernel {
         ticket.input = args; ticket.inputHash = digest(args); this.counters.revisions++;
         // A memory write whose input changed after the gates ran is no longer the intent that passed them:
         // execution cannot be stopped here, so its outcome is journaled as uncertain whatever the tool reports.
-        if (this.remoteTools.includes(toolName)) { ticket.revised = true; this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_revised', { actionId: ticket.actionId, tool: toolName })); }
+        if (this.remoteTools.includes(ticket.effective ?? toolName)) { ticket.revised = true; this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_revised', { actionId: ticket.actionId, tool: ticket.effective ?? toolName })); }
       }
     } catch { /* journal poison is surfaced on the next intent */ }
   }
@@ -185,7 +191,7 @@ export class RuntimeKernel {
     }
     const exit = result?.details?.exitCode;
     const ok = !isError && !(typeof exit === 'number' && exit !== 0);
-    const remote = this.remoteTools.includes(toolName);
+    const remote = this.remoteTools.includes(ticket.effective ?? toolName);
     // A canonical-memory write whose call errored may still have landed, and one whose input changed
     // after the gates ran is not the intent that passed them. Either way the outcome stays unknown
     // until an agent reads the record back and attests to it.

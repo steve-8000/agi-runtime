@@ -6,7 +6,7 @@
 
 | 검사 | 결과 | 범위 | 증거 |
 |---|---|---|---|
-| `node --experimental-strip-types --test tests/*.test.mjs` | 76 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
+| `node --experimental-strip-types --test tests/*.test.mjs` | 78 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
 | `node scripts/check.mjs` | JS 23개 syntax, `tsc -p .` 통과 | `types/pi-coding-agent.d.ts`에 대한 typecheck. 전체 OMP typecheck 아님 | `evidence/check.jsonl` |
 | `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 오류난 쓰기 → `unknown` → 백엔드 검사 거절 → 읽기 성공 후에도 `RECONCILIATION_REQUIRED` → attestation 뒤 허용 → stale evidence 인용 거절 | offline. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, contract 3, counters intents/starts/results/ends 2/2/2/2·`turns: 3` | 새 config(gbrain 도구·`recall.mode: require`)로 실제 `omp -p` 1회. 시작 명령 없이 attach·저널·게이트가 붙는다 | `evidence/compat-live.json` |
@@ -39,7 +39,7 @@
 
 **회상**: 같은 turn의 회상 intent·settle은 효과를 통과시키지 않음(`settledTurn < intent.turn`), 읽기는 대기 없음, 실패한 회상도 settle, `recall.tools` 밖의 메모리 read(`synthesize`)는 회상 아님, 10회 거절해도 상태 불변(횟수 해제 없음), goal 변경 시 재요구, 새 epoch는 이전 settle을 물려받지 않음, 디스패치된 회상(`xd://`)은 게이트를 만족시키고 봉투는 효과가 아님, 운영자 해제는 goal 하나·`recall.override` 저널·모델은 호출 불가, `advise`는 차단 없음, 조망 회상 뒤 아무 것도 읽지 않으면 `recall.shallow`, discovery: zvec 전 distinct read 수·`freshness:` 관측·`search.scope` 이벤트(입력 무수정).
 
-**메모리**: 자격증명 패턴은 전송 전 거절(`MEMORY_SECRET`, 저널에 executing 행 없음), 인용한 근거의 파일이 바뀌면 거절(`STALE_EVIDENCE`)·안 바뀌면 통과, 인용 없는 쓰기는 허용+`memory.unverified`, 직전 메모리 호출이 실패면 다음 쓰기 대기(`MEMORY_BACKEND_DEGRADED`), 오류난 쓰기는 `unknown`(읽기 성공만으로 해소되지 않음, attestation 필요), 입력이 게이트 통과 후 바뀐 쓰기는 성공해도 `unknown`(`memory.write_revised`+`memory.write_unknown`), 메모리 unknown은 메모리 쓰기만 막고 workspace 효과는 계속(`blockedUntilReconciled` false), 후보 큐 테이블이 있는 저널은 v4로 전진하며 `actions` 보존, 미지 스키마는 열지 않음.
+**메모리**: `xd://` 봉투로 디스패치된 쓰기도 원격으로 범위가 잡힌다(저널 행의 도구 이름이 실행될 도구, `uncertainRemote` 1, 후속 메모리 쓰기 대기)·봉투 안의 자격증명도 device 실행 전에 거절, 자격증명 패턴은 전송 전 거절(`MEMORY_SECRET`, 저널에 executing 행 없음), 인용한 근거의 파일이 바뀌면 거절(`STALE_EVIDENCE`)·안 바뀌면 통과, 인용 없는 쓰기는 허용+`memory.unverified`, 직전 메모리 호출이 실패면 다음 쓰기 대기(`MEMORY_BACKEND_DEGRADED`), 오류난 쓰기는 `unknown`(읽기 성공만으로 해소되지 않음, attestation 필요), 입력이 게이트 통과 후 바뀐 쓰기는 성공해도 `unknown`(`memory.write_revised`+`memory.write_unknown`), 메모리 unknown은 메모리 쓰기만 막고 workspace 효과는 계속(`blockedUntilReconciled` false), 후보 큐 테이블이 있는 저널은 v4로 전진하며 `actions` 보존, 미지 스키마는 열지 않음.
 
 ## 수행하지 않은 검사
 
