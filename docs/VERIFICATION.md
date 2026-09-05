@@ -11,7 +11,7 @@
 | `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 불명 note → 백엔드 검사 거절 → status → 서명 receipt로 `reconciled`, publish 성공만으로 `submitted`, receipt로 `published` | offline, 스크립트가 만든 임시 서명키. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, counters intents/starts/results/ends 2/2/2/2, **`turns: 3`**(이전 실행 4; 프롬프트 1 + 모델 호출당 `turn_start`) | auto-discovery 경로로 실제 `omp -p` 1회. `turn_start`가 18.1.10에서 실제로 발화함을 확인 | `evidence/compat-live.json` |
 | `node scripts/doctor.mjs` | `ready:true`; tested-version `tested`, compat-report `ok`, `memory-receipts: verifiable` | 실제 설치 상태 | `evidence/doctor.json` |
-| clab-mem `bun test` | 120 passed (커밋 규약 14개 신규: 마커 dedupe, 덮어쓰기 재적용, 위에 쌓기, 청크 지연 대기, ready 미도달 거부, 손실 복원 거부·정규화 일치 허용, 읽는 중 행 변경 재읽기, 정확 캐시, 상한 실패, inspect가 duplicate보다 먼저, `not_sent`는 push 이전 연결 실패에만, lock 직렬화·탈취·해제 안전) | `lazy-project/clab-mem` | 본 문서 |
+| clab-mem `bun test` | 120 passed (커밋 규약 14개 신규: 마커 dedupe, 덮어쓰기 재적용, 위에 쌓기, 청크 지연 대기, ready 미도달 거부, 손실 복원 거부·정규화 일치 허용, 읽는 중 행 변경 재읽기, 정확 캐시, 상한 실패, inspect가 duplicate보다 먼저, `not_sent`는 push 이전 연결 실패에만, SQLite 쓰기 lock: 같은 프로세스 큐 직렬화, 다른 프로세스가 쥔 lock은 busy 초과 시 `NotSentError`·그 프로세스 종료 후 획득) | `lazy-project/clab-mem` | 본 문서 |
 | 청크 복원 fidelity 실측 | 정규화 전 0/40 일치, `render(parse(·))` 정규화 후 79/80 일치 | 실제 Utopia 기록 80건 | 본 문서 |
 | clab-mem 라이브 `mem_task_note` ×2 (같은 `idempotency_key`) | 1회차 `receipt outcome=committed … action=updated`, 2회차 `action=duplicate`, 기록에 마커 1개·절 2개(요구사항+진행) | 실제 Utopia(`mem.clab.one`), `/usr/bin/curl` 전송 | 본 문서 |
 | clab-mem 라이브 cache-miss note | 로컬 사본을 치운 뒤 새 키로 note → 복원·정규화 sha 일치 → `updated`, 이전 절 보존(절 3개, 마커 각 1개) | 다른 기계 경로의 실제 동작 | 본 문서 |
@@ -43,7 +43,7 @@
 
 **메모리**: receipt 파싱 엄격(중복 토큰·미지 outcome·sig 없음 거절), 서명 검증(다른 키·변조 거절), publish 성공만으로 `submitted`(정본 아님), 무서명·타키·타payload receipt는 telemetry, 검증된 receipt로만 `published`, publish 입력≠후보 → `MEMORY_CANDIDATE_MISMATCH`(hash·idem·content·evidence·rejected), stale evidence는 publish·인용 note 모두 전송 전 거절, 인용 없는 note 허용+`memory.unverified`, publish 오류 → outbox·action `unknown`이되 workspace 효과는 비차단, 직전 실패 뒤 쓰기 → `MEMORY_BACKEND_DEGRADED`(status 성공으로 해제), 다른 idem 쓰기 → `RECONCILIATION_REQUIRED`, 같은 idem 재발행 허용, receipt 없는 2xx는 해소 아님, 자기 intent에 묶인 `committed`만 이전 행 `reconciled(by: receipt)`, `not_sent`는 서명+바인딩(key·idem 정확 일치)일 때만 `failed`(타키·타intent·idem 없음은 `unknown`), revise로 입력이 바뀐 쓰기는 성공해도 `unknown`(실행된 intent의 receipt로만 해소), payload가 바뀐 publish는 receipt가 있어도 `unknown`, task key 미확인 쓰기 → `MEMORY_TASK_NOT_STARTED`(실패한 read는 증명 아님, start는 예외), 자격증명 → `MEMORY_SECRET`, 투기적 kind 거절, `memoryTask`·`effectsSinceNote`는 저널에서 유도되어 재시작 뒤 동일(`rowid` 경계), v2 저널 마이그레이션.
 
-**clab-mem 커밋 규약**(`mcp/commit.test.ts`): 마커 있으면 밀지 않음, 덮어쓰기 감지 후 재적용(두 절 보존), 위에 쌓인 경우 재적용 없음, `ready` 대기 후 바탕, 정확 캐시는 청크 미조회, 상한 초과는 실패(조용한 성공 없음), lock 직렬화, stale lock은 rename 탈취, 뺏긴 소유자는 새 lock을 지우지 못함.
+**clab-mem 커밋 규약**(`mcp/commit.test.ts`): 마커 있으면 밀지 않음, 덮어쓰기 감지 후 재적용(두 절 보존), 위에 쌓인 경우 재적용 없음, `ready` 대기 후 바탕, 정확 캐시는 청크 미조회, 상한 초과는 실패(조용한 성공 없음), SQLite 쓰기 lock 직렬화(같은 프로세스 큐, 자식 프로세스가 쥔 lock 대기·해제).
 
 ## 수행하지 않은 검사
 
