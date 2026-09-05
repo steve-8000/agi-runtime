@@ -66,17 +66,26 @@ test('runtime tools chain evidence into checkpoint and memory candidate without 
   assert.match(h.ctx.notices.at(-1).message, /UNKNOWN_RUNTIME_COMMAND/);
   const s = await h.openJournal(); assert.equal(s.outbox(candidate.details.candidateId).state, 'candidate');
 });
-test('runtime_reconcile closes an uncertain effect on the agent\'s attestation and journals who attested', async t => {
-  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
+test('runtime_reconcile passes the boundary while a workspace unknown and the recall gate hold effects, and journals who attested', async t => {
+  const memory = 'mcp__clab_mem_mem_search';
+  const h = await harness(t, { config: { memoryReadTools: [memory], recall: { mode: 'require', tools: [memory] } } }); await h.handlers.get('session_start')({}, h.ctx);
   const s = await h.openJournal(); const ghost = s.acquire(s.workspace(h.root).id, 'ghost', { ttl: 1000 });
   s.beginAction(ghost, { actionId: 'ghost-1', tool: 'bash', input: { command: 'deploy' } });
   await new Promise(resolve => setTimeout(resolve, 1100));
-  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } })).reason, /RECONCILIATION_REQUIRED/);
-  const result = await h.tools.get('runtime_reconcile').execute('rc', { actionIds: ['ghost-1'], observed: 'git status clean; deploy did not run', evidenceIds: [] }, undefined, undefined, h.ctx);
+  h.handlers.get('before_agent_start')({}, h.ctx);
+  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } })).reason, /RECALL_REQUIRED|RECONCILIATION_REQUIRED/);
+  // The model's call arrives as tool_call first: a session write, so neither the unknown it resolves nor the recall gate holds it.
+  const input = { actionIds: ['ghost-1'], observed: 'git status clean; deploy did not run', evidenceIds: [] };
+  assert.equal(await h.handlers.get('tool_call')({ type: 'tool_call', toolCallId: 'rc', toolName: 'runtime_reconcile', input }, h.ctx), undefined);
+  const result = await h.tools.get('runtime_reconcile').execute('rc', input, undefined, undefined, h.ctx);
+  await h.handlers.get('tool_result')({ type: 'tool_result', toolCallId: 'rc', toolName: 'runtime_reconcile', input, content: result.content, details: result.details, isError: false }, h.ctx);
+  await h.handlers.get('tool_execution_end')({ type: 'tool_execution_end', toolCallId: 'rc', toolName: 'runtime_reconcile', result, isError: false }, h.ctx);
   assert.deepEqual(result.details, { reconciled: ['ghost-1'], remaining: 0 });
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'true' } }), undefined);
+  assert.deepEqual(s.db.prepare("SELECT tool,is_effect,state FROM actions WHERE tool='runtime_reconcile'").all().map(r => ({ ...r })), [{ tool: 'runtime_reconcile', is_effect: 0, state: 'succeeded' }]);
   const attested = s.events(s.workspace(h.root).id).find(e => e.kind === 'action.reconciled');
   assert.equal(attested.payload.by, 'session'); assert.match(attested.payload.observed, /git status clean/);
+  await dispatch(h.handlers, h.ctx, { toolCallId: 'q1', toolName: memory, input: { query: 'deploy' } }); h.handlers.get('before_agent_start')({}, h.ctx);
+  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'true' } }), undefined);
 });
 test('agent_end only notifies about unrecorded effects, and a re-attach hands the model one resume card of journal facts', async t => {
   const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);

@@ -180,7 +180,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 		description: "Close uncertain (unknown-outcome) effects after reading back the real target state: the working tree, git, or the memory record itself. State what was observed; this is an attestation, never a retry. Optional evidence receipt ids support it.",
 		parameters: z.object({ actionIds: z.array(z.string()), observed: z.string(), evidenceIds: z.array(z.string()) }),
 		async execute(_id, params: { actionIds: string[]; observed: string; evidenceIds: string[] }) {
-			const k = requireKernel();
+			const k = requireKernel(); store!.discoverLapsed(lease!.workspace);
 			const pending: UncertainAction[] = store!.unknownActions(lease!.workspace);
 			const targets = params.actionIds.includes("all") ? pending : pending.filter(x => params.actionIds.some(id => x.id === id || (id.length >= 12 && x.id.startsWith(id))));
 			check(targets.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
@@ -201,6 +201,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 				else if (command === "resume") { check(!k.config.blockOnUnknown || !k.context().blockedUntilReconciled, "RECONCILIATION_REQUIRED"); k.paused = false; }
 				else if (command === "reconcile") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reconcile <action-id|all> [evidence-id…]");
+					store!.discoverLapsed(lease!.workspace);
 					const pending: UncertainAction[] = store!.unknownActions(lease!.workspace).filter((x: UncertainAction) => target === "all" || x.id === target);
 					check(pending.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
 					if (rest.length) { store!.assertEvidence(lease!.workspace, rest); for (const id of rest) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }

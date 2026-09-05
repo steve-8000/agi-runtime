@@ -130,6 +130,8 @@ export class RuntimeStore {
     this.db.prepare(`UPDATE actions SET state='unknown',updated=? WHERE workspace=? AND state='executing' AND is_effect=1 AND session IN (${expired})`).run(now, workspace, workspace, now);
     this.db.prepare(`UPDATE actions SET state='failed',updated=? WHERE workspace=? AND state='executing' AND is_effect=0 AND session IN (${expired})`).run(now, workspace, workspace, now);
   }
+  /** Discover lapsed work now, outside any other transaction: state reads and reconciliation must not wait for the next effect intent. */
+  discoverLapsed(workspace) { this.transaction(() => this.sweep(workspace)); }
   acquire(workspace, session, { ttl = 30000, hasUI = true } = {}) {
     check(typeof session === 'string' && session.length > 0, 'INVALID_SESSION');
     check(Number.isSafeInteger(ttl) && ttl >= 1000, 'INVALID_TTL');

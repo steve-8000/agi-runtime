@@ -11,10 +11,11 @@
 | `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 불명 note → 백엔드 검사 거절 → status → 서명 receipt로 `reconciled`, publish 성공만으로 `submitted`, receipt로 `published` | offline, 스크립트가 만든 임시 서명키. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, counters intents/starts/results/ends 2/2/2/2, **`turns: 3`**(이전 실행 4; 프롬프트 1 + 모델 호출당 `turn_start`) | auto-discovery 경로로 실제 `omp -p` 1회. `turn_start`가 18.1.10에서 실제로 발화함을 확인 | `evidence/compat-live.json` |
 | `node scripts/doctor.mjs` | `ready:true`; tested-version `tested`, compat-report `ok`, `memory-receipts: verifiable` | 실제 설치 상태 | `evidence/doctor.json` |
-| clab-mem `bun test` | 118 passed (커밋 규약 12개 신규: 마커 dedupe, 덮어쓰기 재적용, 위에 쌓기, 청크 지연 대기, ready 미도달 거부, 손실 복원 거부·정규화 일치 허용, 읽는 중 행 변경 재읽기, 정확 캐시, 상한 실패, lock 직렬화·탈취·해제 안전) | `lazy-project/clab-mem` | 본 문서 |
+| clab-mem `bun test` | 120 passed (커밋 규약 14개 신규: 마커 dedupe, 덮어쓰기 재적용, 위에 쌓기, 청크 지연 대기, ready 미도달 거부, 손실 복원 거부·정규화 일치 허용, 읽는 중 행 변경 재읽기, 정확 캐시, 상한 실패, inspect가 duplicate보다 먼저, `not_sent`는 push 이전 연결 실패에만, lock 직렬화·탈취·해제 안전) | `lazy-project/clab-mem` | 본 문서 |
 | 청크 복원 fidelity 실측 | 정규화 전 0/40 일치, `render(parse(·))` 정규화 후 79/80 일치 | 실제 Utopia 기록 80건 | 본 문서 |
 | clab-mem 라이브 `mem_task_note` ×2 (같은 `idempotency_key`) | 1회차 `receipt outcome=committed … action=updated`, 2회차 `action=duplicate`, 기록에 마커 1개·절 2개(요구사항+진행) | 실제 Utopia(`mem.clab.one`), `/usr/bin/curl` 전송 | 본 문서 |
 | clab-mem 라이브 cache-miss note | 로컬 사본을 치운 뒤 새 키로 note → 복원·정규화 sha 일치 → `updated`, 이전 절 보존(절 3개, 마커 각 1개) | 다른 기계 경로의 실제 동작 | 본 문서 |
+| v2 저널 손상 행 마이그레이션 | `bun`·`node` 양쪽에서 open이 throw, `user_version=2`·원본 `outbox`·행 보존(문장별 실행 + ROLLBACK) | 두 SQLite 엔진의 실제 동작 | 본 문서 |
 | 서버 receipt → 런타임 `verifyReceipt` | 라이브 receipt 줄이 `memoryReceiptPublicKey`로 `verified:true`, 한 글자 바꾸면 `false` | 두 구현의 서명 호환 | 본 문서 |
 
 ## 라이브에서 확인한 것
@@ -36,7 +37,7 @@
 
 **정책/근거**: 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec = read(입력 무수정·`revisions` 0·`search.*` 이벤트 없음·toolCalls +1/effects +0), zvec 실패·lapse = `failed`(unknown·poison 아님, 다음 효과 허용), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
 
-**확장(mock)**: 로드·도구 5개·`session_stop` 미등록·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·recall·memory·discovery·`search.semanticDiscovery`=zvec), evidence→checkpoint→candidate 체인(publish 명령 없음, 후보는 `candidate`), `runtime_reconcile` attestation(`by: session`, `observed` 저널), `agent_end` 알림만, 재attach·compaction 뒤 resume card 1회(저널 사실), pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
+**확장(mock)**: 로드·도구 5개·`session_stop` 미등록·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·recall·memory·discovery·`search.semanticDiscovery`=zvec), evidence→checkpoint→candidate 체인(publish 명령 없음, 후보는 `candidate`), `runtime_reconcile`은 session-write라 workspace unknown·recall gate가 막지 못함(tool_call 경유 회귀), attestation(`by: session`, `observed` 저널), `agent_end` 알림만, 재attach·compaction 뒤 resume card 1회(저널 사실), pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
 
 **회상**: 같은 turn의 회상 intent·settle은 효과를 통과시키지 않음(`settledTurn < intent.turn`), 읽기는 대기 없음, 실패한 회상도 settle, `mem_status`/`mem_read`는 회상 아님, 10회 거절해도 상태 불변(횟수 해제 없음), goal 변경 시 재요구, epoch 재개 + task 알려짐 → 그 키의 `mem_task_read`만, `advise`는 차단 없음, `hits>0` 뒤 읽기 없음 → `recall.shallow`, discovery: zvec 전 distinct read 수·`freshness:` 관측·`search.scope` 이벤트(입력 무수정).
 

@@ -6,7 +6,8 @@ import { check, digest } from './util.mjs';
 // zvec-grep is the workspace's semantic search; to this runtime it is one more read. Its query
 // semantics (limit, freshness, scope) belong to OMP and zvec, never to this table.
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'mcp__zvec_grep_search', 'runtime_status', 'runtime_evidence']);
-const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'runtime_checkpoint', 'runtime_memory_candidate']);
+// runtime_reconcile is the way out of RECONCILIATION_REQUIRED and must not itself be an effect the gate holds.
+const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'runtime_checkpoint', 'runtime_memory_candidate', 'runtime_reconcile']);
 const PATH_EDIT_TOOLS = new Set(['edit', 'ast_edit']);
 
 export function classify(call, config = {}, root) {

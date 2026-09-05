@@ -263,6 +263,7 @@ export class RuntimeKernel {
     });
   }
   context() {
+    this.observe(() => this.store.discoverLapsed(this.lease.workspace));
     const row = this.store.sessionRow(this.lease.session);
     const unknown = this.store.unknownActions(this.lease.workspace);
     const workspaceUnknown = unknown.filter(x => !this.remoteTools.includes(x.tool));
