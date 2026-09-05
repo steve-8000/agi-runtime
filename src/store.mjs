@@ -31,7 +31,7 @@ export class RuntimeStore {
     const version = db.prepare('PRAGMA user_version').get().user_version;
     check([0, 2, 3, 4].includes(version), 'UNSUPPORTED_SCHEMA');
     if (version === 2 || version === 3) {
-      // The candidate outbox staged promotions for a publish call that canonical memory no longer has:
+      // Older journals carried a local staging table for a publish call canonical memory does not have:
       // a fact is written by the memory tool itself, and an uncertain write is closed by read-back.
       // One statement per call: bun:sqlite's multi-statement exec swallows a failure and runs on.
       db.exec('BEGIN IMMEDIATE');
@@ -235,11 +235,11 @@ export class RuntimeStore {
   }
   /**
    * Attestation that the real target state was read back. `by` names the authority: the session's
-   * agent or operator (`session`), or a receipt whose signature this runtime verified (`receipt`).
-   * Evidence receipts are optional support; `observed` is the attester's own bounded note.
+   * agent or operator (`session`). Evidence receipts are optional support; `observed` is the
+   * attester's own bounded note.
    */
   reconcile(lease, actionId, evidenceIds = [], { by = 'session', observed = '' } = {}) {
-    check(['session', 'receipt'].includes(by), 'INVALID_ATTESTATION');
+    check(by === 'session', 'INVALID_ATTESTATION');
     if (observed) boundedText(observed, 2000);
     this.transaction(() => {
       this.assertLease(lease);

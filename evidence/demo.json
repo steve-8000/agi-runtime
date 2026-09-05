@@ -59,7 +59,7 @@
     },
     "checkpoint": {
       "evidenceIds": [
-        "aa50ab38-f5f0-4d56-9723-8cea041e78c5"
+        "ba1dab53-2ba0-44e7-9db6-8c63aa0b662a"
       ],
       "nextAction": "사실 기록",
       "summary": "현재 원문을 확인했다."
@@ -85,7 +85,7 @@
     },
     "search": {
       "index": null,
-      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-0WkrnD/workspace"
+      "root": "/private/var/folders/tc/56th_sqd0tdb3t0m62v53q5h0000gn/T/omp-runtime-demo-s55hgO/workspace"
     },
     "discovery": {
       "zvec": 0,

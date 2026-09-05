@@ -23,7 +23,7 @@ checks.push({ name: 'extension-link', status: link === 'ours' ? 'installed' : li
 try {
   const config = loadRuntimeConfig(layout);
   checks.push({ name: 'runtime-config', status: 'valid', path: layout.config, mode: config.mode, headlessEffects: config.headlessEffects, blockOnUnknown: config.blockOnUnknown, recall: config.recall.mode });
-  // Without the server's public key every receipt is telemetry: uncertain memory writes then close only by attestation.
+  // Canonical memory has to be reachable by name: the gates classify on exact tool names, nothing else.
   checks.push({ name: 'memory-tools', status: config.memoryReadTools.length && config.memoryWriteTools.length ? 'valid' : 'missing', readTools: config.memoryReadTools.length, writeTools: config.memoryWriteTools.length, recall: config.recall.mode });
 } catch (error) { checks.push({ name: 'runtime-config', status: 'invalid', path: layout.config, reason: error.code ?? error.message }); }
 

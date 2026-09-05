@@ -23,8 +23,8 @@ const firstLine = result => {
  *   tool_execution_end   → settle(): final outcome; a divergence from tool_result is journaled
  *   turn_start           → turnStart(): the model can only have read a result in a later turn
  * Nothing here patches OMP. An unknown event shape degrades to observation, never to silent trust.
- * Tool output is telemetry; the one exception is a receipt whose Ed25519 signature verifies against
- * operator config, which may close an uncertain memory write or publish.
+ * Tool output is telemetry: nothing a tool returns moves journal state. An uncertain effect is
+ * closed by an agent or a person reading the real target state back and attesting to it.
  */
 export class RuntimeKernel {
   constructor({ store, lease, root, config = {}, confirm, required = false }) {

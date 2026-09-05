@@ -31,10 +31,6 @@ export async function fixture(t, { config = {}, confirm = async () => true, hasU
       return { store: s, lease: l, kernel: new RuntimeKernel({ store: s, lease: l, root, config: options.config ?? config, confirm }) };
     },
     evidence: () => store.saveEvidence(lease, captureEvidence(root, 'source.txt', 1, 2)),
-    candidate: () => {
-      const evidenceId = store.saveEvidence(lease, captureEvidence(root, 'source.txt', 1, 2));
-      return store.candidate(lease, { kind: 'decision', title: '검증된 결정', content: '정본은 원격 메모리로 유지한다.', evidenceIds: [evidenceId] });
-    }
   };
 }
 export function call(overrides = {}) {

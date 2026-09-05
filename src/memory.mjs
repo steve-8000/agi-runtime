@@ -16,7 +16,7 @@ export function evidenceIsCurrent(store, workspace, root, ids) {
     check(row && verifyEvidence(root, row.record), 'STALE_EVIDENCE');
   }
 }
-/** Evidence receipts a memory write cites anywhere in its input. A citation of a changed file is refused before it is sent. */
+/** Evidence ids a canonical-memory write cites anywhere in its input. A citation of a changed file is refused before it is sent. */
 export function citedEvidence(store, workspace, input) {
   const ids = new Set();
   for (const candidate of stable(input ?? null).match(UUID) ?? []) if (store.evidence(candidate)?.workspace === workspace) ids.add(candidate);
