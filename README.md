@@ -19,7 +19,7 @@ agent_end            → 알림만    : 기록되지 않은 효과 수. continue
 
 **권한 모델.** 에이전트가 권한을 가진다. 사람 승인은 Kubernetes(clab-cluster 제외) 하나에만 남고 그것은 `kubernetes-approval.ts`와 §5.1 구조화 정책의 일이다. 이 계층은 관측자·문지기·원장이다: 절차를 강제하고(첫 효과 전 회상, 재시도 전 read-back, 인용한 근거의 현재성) 스스로 턴을 시작하지 않는다.
 
-OMP core는 수정하지 않는다. 확장 API 계약이 바뀌면 `~/.omp/runtime/compat/<version>.json`에 `degraded`로 기록된다. probe한 멤버가 사라진 경우 runtime은 attach하지 않는다 — 알림 한 줄, 저널 없음, OMP 도구는 평소처럼 동작. `OMP_RUNTIME_REQUIRED=1`이면 대신 모든 도구 호출을 `RUNTIME_HANDLER_REQUIRED`로 차단한다 — 단, 이 차단은 `tool_call` 핸들러가 설치된 뒤에만 가능하다. `pi.on` 자체가 사라졌거나 factory가 load 중 throw하면 핸들러가 없으므로 REQUIRED도 아무것도 막지 못하고 OMP는 확장 load error만 남긴다. 이벤트 의미만 바뀐 경우(`counters.unmatched* > 0`)는 report만 `degraded`이고 커널은 설정된 `mode`로 계속 동작한다.
+OMP core는 수정하지 않는다. 확장 API 계약이 바뀌면 `~/.omp/runtime/compat/<version>.json`에 `degraded`로 기록된다. probe한 멤버가 사라진 경우 runtime은 attach하지 않는다 — 알림 한 줄, 저널 없음, OMP 도구는 평소처럼 동작. `OMP_RUNTIME_REQUIRED=1`은 이 호스트 계약 위반에만 도구를 막는다(config·lease 문제는 비활성). `OMP_RUNTIME_REQUIRED=1`이면 대신 모든 도구 호출을 `RUNTIME_HANDLER_REQUIRED`로 차단한다 — 단, 이 차단은 `tool_call` 핸들러가 설치된 뒤에만 가능하다. `pi.on` 자체가 사라졌거나 factory가 load 중 throw하면 핸들러가 없으므로 REQUIRED도 아무것도 막지 못하고 OMP는 확장 load error만 남긴다. 이벤트 의미만 바뀐 경우(`counters.unmatched* > 0`)는 report만 `degraded`이고 커널은 설정된 `mode`로 계속 동작한다.
 
 ## 설치 위치
 
@@ -95,7 +95,7 @@ OMP를 업데이트한 뒤 할 일은 새 세션 한 번 열고 `doctor`를 보�
 ## 검증
 
 ```sh
-node --experimental-strip-types --test tests/*.test.mjs   # 81 tests
+node --experimental-strip-types --test tests/*.test.mjs   # 87 tests
 node scripts/check.mjs                                    # JS syntax + tsc (types/pi-coding-agent.d.ts 기준)
 node scripts/demo.mjs                                     # offline: recall gate → uncertain write → read-back attestation
 ```

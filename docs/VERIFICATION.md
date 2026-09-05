@@ -6,7 +6,7 @@
 
 | 검사 | 결과 | 범위 | 증거 |
 |---|---|---|---|
-| `node --experimental-strip-types --test tests/*.test.mjs` | 81 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
+| `node --experimental-strip-types --test tests/*.test.mjs` | 87 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
 | `node scripts/check.mjs` | JS 23개 syntax, `tsc -p .` 통과 | `types/pi-coding-agent.d.ts`에 대한 typecheck. 전체 OMP typecheck 아님 | `evidence/check.jsonl` |
 | `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 오류난 쓰기 → `unknown` → 백엔드 검사 거절 → 읽기 성공 후에도 `RECONCILIATION_REQUIRED` → attestation 뒤 허용 → stale evidence 인용 거절 | offline. 모델·원격 호출 없음 | `evidence/demo.json` |
 | `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, contract 3, counters intents/starts/results/ends 2/2/2/2·`turns: 3` | 새 config(gbrain 도구·`recall.mode: require`)로 실제 `omp -p` 1회. 시작 명령 없이 attach·저널·게이트가 붙는다 | `evidence/compat-live.json` |
@@ -31,9 +31,9 @@
 
 **저널/lease**: 같은 세션 이중 실행 거절, 형제 세션 공존, 살아 있는 형제의 `executing`은 sweep 안 함, lapse한 형제의 효과는 `unknown`→새 효과 차단(읽기는 허용), 읽기 중단은 `failed`, 재개 시 epoch 증가·사용량 카운터 유지·구 lease fencing, 중복 디스패치 거절, 사용량 카운터 무상한(호출 수·경과 시간이 차단하지 않음), observe 모드 unknown 비차단, `blockOnUnknown:false`, pause workspace 전역, 승인 정확 입력·1회·만료·epoch, evidence scope, nonzero exit/isError = `failed`(unknown 아님), 입력 수정 저널, isError 뒤집기 저널, goal mirror, reconcile(근거 선택·scope 검사·`all`·해소 후 새 효과 허용), 스키마 버전 불일치 거절.
 
-**커널**: 네 이벤트 1회 정산, `tool_execution_end` 단독 마감, 중첩 디스패치 키, 차단한 호출의 후속 이벤트는 계약 위반으로 세지 않음, 못 본 호출의 이벤트는 `unmatched*`, 승인 1회 소비, 저널 쓰기 실패 → poison(enforce 차단 / observe 기록), lease 상실 차단, context의 권한 부인 문구.
+**커널**: 깨진 저널도 이미 기록한 unknown은 그대로 막는다(`RECONCILIATION_REQUIRED`, beginAction EIO 상태), 되찾은 lease는 headless를 유지, 저널 I/O 실패는 지속되더라도 호출을 거절하지 않음(`journal.degraded` 1회, `blocks` 0), 만료된 lease는 되찾아 저널 계속(`writer.reclaimed`, epoch 2)·살아 있는 홀더가 있으면 저널 없이 진행, 네 이벤트 1회 정산, `tool_execution_end` 단독 마감, 중첩 디스패치 키, 차단한 호출의 후속 이벤트는 계약 위반으로 세지 않음, 못 본 호출의 이벤트는 `unmatched*`, 승인 1회 소비, 저널 쓰기 실패 → poison(enforce 차단 / observe 기록), lease 상실 차단, context의 권한 부인 문구.
 
-**정책/근거**: 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec = read(입력 무수정·`revisions` 0·`search.*` 이벤트 없음·toolCalls +1/effects +0), zvec 실패·lapse = `failed`(unknown·poison 아님, 다음 효과 허용), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
+**정책/근거**: `yield`와 조율용 `hub`(peer send/wait)는 session-write라 게이트에 걸리지 않고 `hub op:start`·프로세스 stdin은 효과, 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec = read(입력 무수정·`revisions` 0·`search.*` 이벤트 없음·toolCalls +1/effects +0), zvec 실패·lapse = `failed`(unknown·poison 아님, 다음 효과 허용), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
 
 **확장(mock)**: 로드·도구 4개·`session_stop` 미등록·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·recall·memory·discovery·`search.semanticDiscovery`=zvec), evidence→checkpoint 체인(정본 메모리에 쓰는 런타임 도구 없음, publish 명령 없음), `runtime_reconcile`은 session-write라 workspace unknown·recall gate가 막지 못함(tool_call 경유 회귀), attestation(`by: session`, `observed` 저널), `agent_end` 알림만, 재attach·compaction 뒤 resume card 1회(저널 사실), pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED, 호스트 계약 위반에 한정)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
 

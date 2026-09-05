@@ -36,6 +36,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 
 	let kernel: RuntimeKernel | undefined;
 	let store: RuntimeStore | undefined;
+	// The kernel owns the lease: it may retake it under a new epoch, so nothing else caches one.
 	let lease: Lease | undefined;
 	let timer: unknown;
 	let activeCtx: Ctx | undefined;
@@ -68,15 +69,15 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 				return (await ctx.ui.select(body, ["승인", "거부"])) === "승인";
 			} });
 		timer = ctx.setInterval(() => {
-			try { store!.heartbeat(lease!); }
+			try { store!.heartbeat(kernel!.lease); }
 			catch (error) {
-				// Losing the lease means another process owns the journal now. Stop journaling, keep working.
-				ctx.ui.notify(`AGI Runtime: writer lease lost (${fault(error)}); continuing without the journal`, "warning");
-				attachError = fault(error); if (timer) ctx.clearTimer(timer as never); kernel = undefined;
+				// A lapsed lease is retaken under a new epoch; a live second holder keeps it and this
+				// session journals nothing. Neither case stops the tools.
+				if (!kernel?.reclaim()) ctx.ui.notify(`AGI Runtime: writer lease lost (${fault(error)}); continuing without the journal`, "warning");
 			}
 		}, 5000);
 		// A re-attach (resume, switch, crash recovery) is a boundary the model did not see: hand it the journal's facts once.
-		resumeCard = lease!.epoch > 1;
+		resumeCard = kernel.lease.epoch > 1;
 		const state = kernel.context();
 		if (state.uncertainActions.length) {
 			ctx.ui.notify(`AGI Runtime: ${state.uncertainActions.length}건의 결과 불명 변경이 있습니다. 실제 상태를 읽고 runtime_reconcile 또는 /runtime reconcile <action-id|all>`, state.blockedUntilReconciled ? "warning" : "info");
@@ -87,7 +88,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 		if (!store) return;
 		if (timer && activeCtx) activeCtx.clearTimer(timer as never);
 		try { report(); } catch { /* best effort */ }
-		try { if (lease) store.release(lease); } catch { /* an expired lease is already released */ }
+		try { const held = kernel?.lease ?? lease; if (held) store.release(held); } catch { /* an expired lease is already released */ }
 		finally { store.close(); store = kernel = lease = timer = activeCtx = undefined; }
 	}
 	async function safeAttach(ctx: Ctx): Promise<void> {
@@ -107,7 +108,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	pi.on("session_compact", () => { resumeCard = true; });
 	pi.on("auto_compaction_end", () => { resumeCard = true; });
 	pi.on("turn_start", () => { kernel?.turnStart(); });
-	pi.on("goal_updated", event => { if (kernel && store && lease) store.mirrorGoal(lease, event.goal ?? null); });
+	pi.on("goal_updated", event => { if (kernel && store) store.mirrorGoal(kernel.lease, event.goal ?? null); });
 	// Notification only. The runtime never continues or blocks a stop; the user is the continuation authority.
 	pi.on("agent_end", (_event, ctx) => {
 		if (!kernel) return;
@@ -128,10 +129,10 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint,
 			recall: c.recall, memory: c.memory, discovery: c.discovery,
 			search: { semanticDiscovery: "mcp__zvec_grep_search", exactAndExhaustive: "native grep/rg/lsp", authority: "current source, not index excerpts", root: c.search.root, index: c.search.index } };
-		if (resumeCard && store && lease) {
+		if (resumeCard && store && kernel) {
 			resumeCard = false;
 			state.resume = { epoch: c.epoch, nativeGoal: c.nativeGoal, effectsSinceNote: c.memory.effectsSinceNote,
-				uncertain: (c.uncertainActions as UncertainAction[]).map(x => ({ id: x.id.slice(0, 12), tool: x.tool })), recent: store.recentActions(lease.session) };
+				uncertain: (c.uncertainActions as UncertainAction[]).map(x => ({ id: x.id.slice(0, 12), tool: x.tool })), recent: store.recentActions(kernel.lease.session) };
 		}
 		return { message: { customType: "agi-runtime-state", content: JSON.stringify(state), display: false } };
 	});
@@ -165,26 +166,26 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 		parameters: z.object({ path: z.string(), start: z.number().int().min(1), end: z.number().int().min(1) }),
 		async execute(_id, params: { path: string; start: number; end: number }) {
 			const k = requireKernel(); const record = captureEvidence(k.root, params.path, params.start, params.end);
-			return text({ evidenceId: store!.saveEvidence(lease!, record), ...record });
+			return text({ evidenceId: store!.saveEvidence(kernel!.lease, record), ...record });
 		} });
 	pi.registerTool({ name: "runtime_checkpoint", label: "Runtime Checkpoint", approval: "write",
 		description: "Save a concise operational checkpoint bound to evidence receipts. NOT canonical memory; does not complete an OMP goal.",
 		parameters: z.object({ summary: z.string(), nextAction: z.string(), evidenceIds: z.array(z.string()) }),
 		async execute(_id, params: { summary: string; nextAction: string; evidenceIds: string[] }) {
-			requireKernel(); store!.assertEvidence(lease!.workspace, params.evidenceIds);
-			store!.checkpoint(lease!, params); return text({ saved: true });
+			requireKernel(); store!.assertEvidence(kernel!.lease.workspace, params.evidenceIds);
+			store!.checkpoint(kernel!.lease, params); return text({ saved: true });
 		} });
 	pi.registerTool({ name: "runtime_reconcile", label: "Reconcile Uncertain Effects", approval: "write",
 		description: "Close uncertain (unknown-outcome) effects after reading back the real target state: the working tree, git, or the memory record itself. State what was observed; this is an attestation, never a retry. Optional evidence receipt ids support it.",
 		parameters: z.object({ actionIds: z.array(z.string()), observed: z.string(), evidenceIds: z.array(z.string()) }),
 		async execute(_id, params: { actionIds: string[]; observed: string; evidenceIds: string[] }) {
-			const k = requireKernel(); store!.discoverLapsed(lease!.workspace);
-			const pending: UncertainAction[] = store!.unknownActions(lease!.workspace);
+			const k = requireKernel(); store!.discoverLapsed(kernel!.lease.workspace);
+			const pending: UncertainAction[] = store!.unknownActions(kernel!.lease.workspace);
 			const targets = params.actionIds.includes("all") ? pending : pending.filter(x => params.actionIds.some(id => x.id === id || (id.length >= 12 && x.id.startsWith(id))));
 			check(targets.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
-			if (params.evidenceIds.length) { store!.assertEvidence(lease!.workspace, params.evidenceIds); for (const id of params.evidenceIds) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
-			for (const x of targets) store!.reconcile(lease!, x.id, params.evidenceIds, { by: "session", observed: params.observed });
-			return text({ reconciled: targets.map(x => x.id), remaining: store!.unknownActions(lease!.workspace).length });
+			if (params.evidenceIds.length) { store!.assertEvidence(kernel!.lease.workspace, params.evidenceIds); for (const id of params.evidenceIds) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
+			for (const x of targets) store!.reconcile(kernel!.lease, x.id, params.evidenceIds, { by: "session", observed: params.observed });
+			return text({ reconciled: targets.map(x => x.id), remaining: store!.unknownActions(kernel!.lease.workspace).length });
 		} });
 
 	// ---- operator commands ---------------------------------------------------------------------
@@ -199,13 +200,13 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 				else if (command === "resume") { check(!k.config.blockOnUnknown || !k.context().blockedUntilReconciled, "RECONCILIATION_REQUIRED"); k.paused = false; }
 				else if (command === "reconcile") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reconcile <action-id|all> [evidence-id…]");
-					store!.discoverLapsed(lease!.workspace);
-					const pending: UncertainAction[] = store!.unknownActions(lease!.workspace).filter((x: UncertainAction) => target === "all" || x.id === target);
+					store!.discoverLapsed(kernel!.lease.workspace);
+					const pending: UncertainAction[] = store!.unknownActions(kernel!.lease.workspace).filter((x: UncertainAction) => target === "all" || x.id === target);
 					check(pending.length > 0, "ACTION_STATE_CONFLICT", "no matching uncertain action");
-					if (rest.length) { store!.assertEvidence(lease!.workspace, rest); for (const id of rest) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
+					if (rest.length) { store!.assertEvidence(kernel!.lease.workspace, rest); for (const id of rest) check(verifyEvidence(k.root, store!.evidence(id)!.record), "STALE_EVIDENCE"); }
 					const prompt = `실제 대상 상태를 확인했고, 자동 재실행 없이 아래 ${pending.length}건의 불확실성을 해소했습니까?\n${pending.map(x => `${x.id} ${x.tool} ${x.input_hash.slice(0, 12)} (session ${x.session.slice(0, 8)})`).join("\n")}`;
 					if ((await ctx.ui.select(prompt, ["확인 완료", "취소"])) !== "확인 완료") return;
-					for (const x of pending) store!.reconcile(lease!, x.id, rest, { by: "session", observed: "operator confirmed via /runtime reconcile" });
+					for (const x of pending) store!.reconcile(kernel!.lease, x.id, rest, { by: "session", observed: "operator confirmed via /runtime reconcile" });
 				} else if (command === "recall") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target === "skip", "USAGE", "/runtime recall skip");
 					k.recallSkip("operator");

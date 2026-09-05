@@ -45,13 +45,45 @@ export class RuntimeKernel {
   get paused() { return this.store.isPaused(this.lease.workspace); }
   set paused(value) { this.store.setPaused(this.lease, value); }
 
-  /** Journal writes are load-bearing: once one fails after a tool ran, later effects are not trusted. */
+  /**
+   * Journal writes are load-bearing, but a ledger this session cannot write — a full disk, an I/O
+   * error, a lease another process took — is not a reason to refuse the work. Policy faults still
+   * throw: they are decisions, not breakage.
+   */
   journal(fn) {
     try { return fn(); }
     catch (error) {
-      if (!(error instanceof RuntimeFault) || error.code === 'FENCED_WRITER') this.poison = error;
-      throw error;
+      if (!(error instanceof RuntimeFault)) { this.poison = error; this.reportDegraded(); return undefined; }
+      if (error.code !== 'FENCED_WRITER') throw error;
+      // The lease fences a *stale* writer. A session that is still running and finds itself fenced
+      // takes the ledger back under a new epoch, which sweeps whatever the old epoch left in flight.
+      // Only a genuinely live second holder keeps it, and then this session works unjournaled.
+      if (this.reclaim()) {
+        try { return fn(); }
+        catch (retry) {
+          if (retry instanceof RuntimeFault && retry.code !== 'FENCED_WRITER') throw retry;
+          this.poison = retry; this.reportDegraded(); return undefined;
+        }
+      }
+      this.poison = error; this.reportDegraded();
+      return undefined;
     }
+  }
+  /** Retakes the writer lease after a lapse so journaling resumes in the same session. */
+  reclaim() {
+    try {
+      const row = this.store.sessionRow(this.lease.session);
+      const lease = this.store.acquire(this.lease.workspace, this.lease.session, { hasUI: row ? !!row.has_ui : true });
+      this.lease = lease;
+      this.observe(() => this.store.emit(lease.workspace, 'writer.reclaimed', { session: lease.session, epoch: lease.epoch }));
+      return true;
+    } catch { return false; }
+  }
+  /** Said once per session: the model needs to know its ledger is incomplete, not a line per call. */
+  reportDegraded() {
+    if (this.poisonReported) return;
+    this.poisonReported = true;
+    this.observe(() => this.store.emit(this.lease.workspace, 'journal.degraded', { session: this.lease.session, message: String(this.poison?.message ?? '') }));
   }
   observe(fn) { try { fn(); } catch { /* observability only */ } }
   prune() {
@@ -98,7 +130,9 @@ export class RuntimeKernel {
     if (entry.turn >= this.turn) {
       // The procedure is one extra message, never a dead end: a session that cannot recall (no tool,
       // no backend, no answer) opens the gate itself and records that it did.
-      entry.strikes = (entry.strikes ?? 0) + 1;
+      // One strike per turn. Three effects in a single message are three refusals of the same
+       // unread recall, not three attempts to get one.
+      if (entry.strikeTurn !== this.turn) { entry.strikeTurn = this.turn; entry.strikes = (entry.strikes ?? 0) + 1; }
       if (entry.strikes >= RECALL_STRIKES) {
         entry.turn = Math.min(entry.turn, this.turn - 1); entry.forced = true;
         this.observe(() => this.store.emit(this.lease.workspace, 'recall.forced', { session: this.lease.session, goal: this.goalKey(), strikes: entry.strikes }));
@@ -132,11 +166,9 @@ export class RuntimeKernel {
     try {
       // A journal that cannot be written is a broken ledger, not a reason to stop the work: the
       // session degrades to observation and says so. Blocking here used to need a restart to clear.
-      if (this.poison && this.enforcing && !this.poisonReported) {
-        this.poisonReported = true;
-        this.observe(() => this.store.emit(this.lease.workspace, 'journal.degraded', { session: this.lease.session, message: String(this.poison?.message ?? '') }));
-      }
-      this.store.assertLease(this.lease);
+      if (this.poison) this.reportDegraded();
+      // One mechanism for a fenced writer: reclaim if the holder lapsed, else journal-less work.
+      this.journal(() => this.store.assertLease(this.lease));
       const op = classify(call, this.config, this.root);
       const policy = decision(call, op, this.config);
       check(policy.allow, policy.reason ?? 'DENIED');
@@ -170,6 +202,12 @@ export class RuntimeKernel {
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
       const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
+      // Read-only first: a journal that cannot be written still knows what it already recorded, so a
+      // broken ledger never becomes a way past the attestation an unknown effect is waiting for.
+      if (effect && blockOnUnknown) {
+        this.observe(() => this.store.discoverLapsed(this.lease.workspace));
+        this.store.assertReconciled(this.lease.workspace, { remote: this.remoteTools.includes(effective), remoteTools: this.remoteTools });
+      }
       // The row records the tool that runs, so every later reader (unknown scope, resume card,
       // effects-since-write) sees a dispatched canonical-memory write as one. The action id keeps the
       // envelope's own name, so the nested call's row stays distinct.

@@ -126,3 +126,13 @@ test('discovery counts distinct reads before the first semantic search and obser
   const c = f.kernel.context();
   assert.deepEqual(c.discovery, { zvec: 1, readsBeforeFirstZvec: 2 }); assert.equal(c.search.index, 'stale'); assert.equal(c.search.root, realpathSync(f.root));
 });
+
+test('three effects in one message are three refusals, not three attempts: the strike is per turn', async t => {
+  const f = await fixture(t, { config }); f.kernel.turnStart();
+  for (const id of ['p1', 'p2', 'p3']) assert.match((await f.kernel.intent(bash(id))).reason, /RECALL_REQUIRED/);
+  assert.equal(f.kernel.context().recall.state, 'pending', 'parallel calls in one message cannot open the gate');
+  f.kernel.turnStart(); assert.match((await f.kernel.intent(bash('p4'))).reason, /RECALL_REQUIRED/);
+  f.kernel.turnStart();
+  assert.equal(await run(f.kernel, bash('p5')), undefined, 'three turns of refusals do open it');
+  assert.equal(f.kernel.context().recall.state, 'forced');
+});

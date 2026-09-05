@@ -63,7 +63,7 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 
 ### 3.1 회상 게이트
 
-`recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `recall`과 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — 정본 메모리가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 자동 해제는 없다: 차단 횟수·시간은 게이트를 풀지 못한다(횟수 기반 해제는 효과 재요청 두 번으로 통과되는 구조적 우회였다). `require`는 운영자의 선언이고, clab-mem이 없는 환경은 `advise`다. epoch이 오른 재개 세션에서 `memoryTask`가 알려져 있으면 그 키의 `mem_task_read`만 통과시킨다. `mem_status`·`mem_read`는 회상이 아니다(telemetry). `hits>0`인 검색 뒤 읽기 없이 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
+`recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `recall`과 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — 정본 메모리가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 게이트는 사람 없이 세 경로로 열린다: settle된 회상, 시도의 실패(도구 미등록·백엔드 무응답), 그리고 같은 goal에서 회상 settle 없이 **turn 3회** 거절(`recall.forced`). 한 메시지의 병렬 효과는 같은 미독 회상에 대한 거절 3건이므로 strike는 turn당 1회만 쌓인다. 운영자의 `/runtime recall skip`은 남아 있지만 정상 경로가 아니다. `recall.tools` 밖의 메모리 read(`synthesize`, `delta`)는 회상이 아니다(telemetry). epoch이 오른 재개 세션은 이전 settle을 물려받지 않는다. `hits>0`인 조망 회상 뒤 아무 것도 읽지 않고 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
 
 `write({path:"xd://<tool>"})`는 봉투일 뿐이라 **디스패치되는 도구로** 분류한다(`src/policy.mjs`의 `dispatched`). 봉투를 opaque write로 보면 디스패치된 회상 read가 효과가 되어 recall 게이트가 자기 자신을 막는다. 게이트가 실제 인자를 필요로 하는 검사(메모리 쓰기)는 중첩 호출 쪽에서 돌고, 봉투는 kind만 물려받는다.
 
@@ -119,7 +119,7 @@ zvec에는 code/workspace 문서만. 정본 기록을 다시 색인하지 않는
 - 쓰기의 `isError`는 `unknown(remote)`이다. 기록됐는지 알 수 없다는 뜻이고, 문구를 바꿔 다시 쓰는 것은 두 번 기록할 위험이다.
 - 실행 입력이 게이트 통과 후 바뀐 쓰기(`action.revised`)는 성공해도 `unknown`이다. 게이트를 통과한 intent가 아니다.
 - 해소는 하나뿐이다: 기록을 읽어(`recall`/`entity`) 실제 상태를 확인한 뒤 `runtime_reconcile`에 관측한 내용을 적는다. 저널에 `by: session`으로 남는다.
-- 전송 전 검사(전부 구조적): 자격증명 패턴(`MEMORY_SECRET` — 한 번 들어가면 정본에서 지우기 어렵다), 인용된 evidence의 현재성(`STALE_EVIDENCE`), 직전 메모리 호출이 실패·불명이면 읽기 먼저(`MEMORY_BACKEND_DEGRADED` — 장애 중 unknown이 쌓이지 않게).
+- 전송 전 검사(전부 구조적): 자격증명 패턴(`MEMORY_SECRET` — 한 번 들어가면 정본에서 지우기 어렵다), 인용된 evidence의 현재성(`STALE_EVIDENCE`), 직전 메모리 호출의 결과가 **불명**이면 읽기 먼저(`MEMORY_BACKEND_DEGRADED` — 확정된 실패는 막지 않는다 — 장애 중 unknown이 쌓이지 않게).
 - 근거를 인용하지 않은 사실은 허용하고 `memory.unverified`로 센다. 결정·제약·사고 기록은 파일 범위와 무관한 경우가 많다.
 
 `unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다. workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다. 메모리 쓰기 하나가 불명이라고 작업 트리 작업이 멈추지는 않는다.
@@ -134,7 +134,7 @@ zvec에는 code/workspace 문서만. 정본 기록을 다시 색인하지 않는
 |---|---|---|
 | hook 경계, core patch 0 | built-in shadowing(`registerTool` + `ctx.invokeTool`) | shadowing은 도구별 스키마 재선언이 필요해 업데이트마다 drift. hook은 네 이벤트만 의존 |
 | `headlessEffects: allow` 기본 | `deny` | AGENTS.md headless 조항은 k8s 한정. 서브에이전트는 확장 미로드. `deny`는 `omp -p`를 읽기 전용으로 만듦. **advisor는 `deny`를 권고했다** — 한 줄로 전환 가능 |
-| 세션 lease | workspace 단일 writer | 사용자는 같은 저장소에 여러 터미널을 연다. 단일 writer는 두 번째 세션을 막거나 관측 전용으로 만든다 |
+| 세션 lease | workspace 단일 writer | 사용자는 같은 저장소에 여러 터미널을 연다. lease는 저널 소유권만 정하고 도구를 막지 않는다: 만료된 lease는 되찾고(`writer.reclaimed`), 살아 있는 홀더가 있으면 저널 없이 일하며 `poisoned`로 노출한다 |
 | `isError` = failed | = unknown | hook에서 throw/isError 구분 불가. 테스트 실패마다 workspace 정지는 비실용적. unknown은 관측 단절에만 |
 | 구조적 계약 위반 시 runtime 비활성(도구는 동작) | fail closed | 업데이트 후 OMP 불능도 "풀림". `OMP_RUNTIME_REQUIRED=1`로 fail closed 선택 가능 |
 | `memoryReadTools` 사전 채움 | 빈 배열 | 서버 소스와 실행 중 라우트에서 이름·읽기 여부 확인 |

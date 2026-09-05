@@ -53,7 +53,7 @@ node scripts/doctor.mjs
 
 새 태그의 소스는 `https://raw.githubusercontent.com/can1357/oh-my-pi/v<version>/packages/coding-agent/src/…`에서 받는다. 검사 대상은 `extensibility/extensions/types.ts`, `extensibility/shared-events.ts`, `extensibility/extensions/wrapper.ts`, `index.ts`(`VERSION`, `getAgentDir` export).
 
-probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime 비활성**이다: 알림 한 줄(`AGI Runtime disabled: EXTENSION_CONTRACT_MISMATCH …`), 저널 없음, OMP 도구는 평소처럼 동작, report는 `degraded`. 무인 실행처럼 경계가 필수인 곳은 `OMP_RUNTIME_REQUIRED=1`로 실행한다 — attach 실패 시 모든 `tool_call`을 `RUNTIME_HANDLER_REQUIRED`로 차단한다. 단, `pi.on`이 없거나 factory가 load 중 throw해 핸들러가 설치되지 않으면 REQUIRED도 차단하지 못한다; 그 경우 `compat-report: none`과 OMP의 extension load error가 유일한 신호다. 이벤트 의미만 바뀐 경우(`counters.unmatched* > 0`)는 report만 `degraded`이고 커널은 설정된 `mode`로 계속 동작한다.
+probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime 비활성**이다(`OMP_RUNTIME_REQUIRED=1`이 도구를 막는 것은 이 호스트 계약 위반뿐이다 — 낡은 운영자 config나 다른 세션이 쥔 lease는 비활성으로만 이어진다): 알림 한 줄(`AGI Runtime disabled: EXTENSION_CONTRACT_MISMATCH …`), 저널 없음, OMP 도구는 평소처럼 동작, report는 `degraded`. 무인 실행처럼 경계가 필수인 곳은 `OMP_RUNTIME_REQUIRED=1`로 실행한다 — attach 실패 시 모든 `tool_call`을 `RUNTIME_HANDLER_REQUIRED`로 차단한다. 단, `pi.on`이 없거나 factory가 load 중 throw해 핸들러가 설치되지 않으면 REQUIRED도 차단하지 못한다; 그 경우 `compat-report: none`과 OMP의 extension load error가 유일한 신호다. 이벤트 의미만 바뀐 경우(`counters.unmatched* > 0`)는 report만 `degraded`이고 커널은 설정된 `mode`로 계속 동작한다.
 
 ## 5. 운영자 정책 (`~/.omp/runtime/config.json`)
 
@@ -65,7 +65,7 @@ probe한 멤버가 사라져 attach가 실패하면 기본 동작은 **runtime �
 | `requireApproval` | `[]` | 나열한 도구는 정확 입력·1회용 승인 프롬프트(UI 필요) |
 | `memoryReadTools` | `[]` (샘플: gbrain 읽기 5종) | 정확한 이름만 read로 분류. 근거: `mcp.json` 서버명 `gbrain`과 그 서버의 메모리 verb, OMP 라우트 `mcp__gbrain_*` |
 | `memoryWriteTools` | `[]` (샘플: `remember`, `forget`) | 원격 쓰기. 오류·입력 변경은 `unknown(remote)`, 해소는 read-back 뒤 attestation, 전송 전 검사(자격증명·인용 근거 현재성·직전 호출 성공). 읽기 목록과 겹칠 수 없다 |
-| `recall` | `{mode: advise, tools: []}` | `require`: goal의 첫 효과 전에 `tools` 중 하나가 이전 turn에 settle되어야 함. `tools ⊆ memoryReadTools`, `require`면 비어 있을 수 없음. 자동 해제 없음 — 메모리 도구가 없는 환경은 `advise`, 예외는 운영자의 `/runtime recall skip`(goal 하나) |
+| `recall` | `{mode: advise, tools: []}` | `require`: goal의 첫 효과 전에 `tools` 중 하나가 이전 turn에 settle되어야 함. `tools ⊆ memoryReadTools`, `require`면 비어 있을 수 없음. turn 3회 거절 또는 회상 시도의 실패로 스스로 열림(§6.1.1). 메모리 도구가 상시 없는 환경은 `advise` |
 | `structuredOperationTools` / `targets` | `[]` / `{}` | 신뢰된 infra 어댑터가 공급하는 descriptor와 target fingerprint. 현재 어댑터 없음 |
 
 잘못된 파일은 attach를 실패시킨다(`INVALID_RUNTIME_MODE` 등). 조용히 기본값으로 떨어지지 않는다. `OMP_RUNTIME_CONFIG`로 경로를, `OMP_RUNTIME_DIR`로 runtime dir 전체를 바꿀 수 있다.
@@ -97,7 +97,7 @@ runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 �
 | 경로 | 조건 | 상태 / 저널 |
 |---|---|---|
 | settle된 회상 | 이전 turn에 회상이 마감 | `recall.state: done` |
-| 시도의 실패 | 도구 미등록(`No such tool`)·백엔드 무응답으로 회상이 `failed` | `unavailable` / `recall.unavailable` |
+| 시도의 실패 | 회상이 `failed`로 마감(백엔드 오류·타임아웃). 결과 문구가 도구 미등록(`No such tool`)이면 부재로 구분한다 | `failed`, 부재는 `unavailable` / `recall.unavailable` |
 | 반복 거절 | 같은 goal에서 회상 settle 없이 3회 거절 | `forced` / `recall.forced` |
 
 `/runtime recall skip`은 운영자 override(goal 하나)로 남아 있지만 정상 경로가 아니다. 도구가 상시 없는 환경은 `recall.mode: advise`가 맞다.
@@ -121,7 +121,10 @@ runtime_reconcile({ actionIds: ["<id>"|"all"], observed: "<읽어서 확인한 �
 
 ### 6.4 lease
 
-`FENCED_WRITER`는 이 세션의 lease가 만료됐다는 뜻이다(프로세스 정지, 시계 점프). 확장은 `abort()`를 호출하고 알린다. 새 세션이 답이다. `SESSION_WRITER_BUSY`는 같은 세션 ID를 다른 프로세스가 잡고 있다는 뜻이다(같은 세션을 두 터미널에서 resume). 하나를 닫고 30초 뒤 다시.
+lease는 **저널의 소유권**을 정하고 workspace 파일을 잠그지 않는다. 그래서 lease 문제로 도구가 막히지 않는다:
+
+- 이 세션의 lease가 만료됐고(프로세스 정지·시계 점프) 아무도 안 잡고 있으면 다음 저널 쓰기에서 **되찾는다**: 새 epoch, `writer.reclaimed` 이벤트, 이전 epoch의 in-flight 행은 sweep이 `unknown`으로 넘긴다.
+- 살아 있는 다른 프로세스가 같은 세션을 잡고 있으면(`SESSION_WRITER_BUSY`) 빼앗지 않는다. 이 세션은 **저널 없이** 계속 일하고 `poisoned: true`로 그 사실을 노출한다 — 완료 보고에 명시해야 한다. 저널이 필요하면 다른 쪽을 닫고 30초 뒤 새 세션.
 
 ### 6.5 롤백
 

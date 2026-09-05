@@ -186,10 +186,7 @@ export class RuntimeStore {
       this.assertLease(lease);
       // Returning a prior success is unsafe for arbitrary tools. All repeated dispatches are rejected.
       check(!this.db.prepare('SELECT 1 FROM actions WHERE id=?').get(actionId), 'DUPLICATE_ACTION');
-      if (isEffect && blockOnUnknown) {
-        const blocking = this.unknownActions(lease.workspace).filter(x => remote || !remoteTools.includes(x.tool));
-        check(blocking.length === 0, 'RECONCILIATION_REQUIRED', `uncertain: ${blocking.map(x => `${x.id.slice(0, 12)} ${x.tool}`).join(', ')}; read back the real state, then runtime_reconcile with what you observed`);
-      }
+      if (isEffect && blockOnUnknown) this.assertReconciled(lease.workspace, { remote, remoteTools });
       this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(isEffect ? 1 : 0, this.now(), lease.session);
       const inputHash = digest(input);
       this.db.prepare('INSERT INTO actions(id,workspace,session,epoch,tool,input_hash,is_effect,state,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)')
@@ -228,6 +225,11 @@ export class RuntimeStore {
       this.db.prepare('UPDATE actions SET state=?,outcome_hash=?,updated=? WHERE id=?').run(state, outcomeHash, this.now(), actionId);
       this.emit(lease.workspace, 'action.finished', { actionId, ok, state, outcomeHash });
     });
+  }
+  /** The unknown-scope refusal, read-only: an effect waits for the attestation of what already ran. */
+  assertReconciled(workspace, { remote = false, remoteTools = [] } = {}) {
+    const blocking = this.unknownActions(workspace).filter(x => remote || !remoteTools.includes(x.tool));
+    check(blocking.length === 0, 'RECONCILIATION_REQUIRED', `uncertain: ${blocking.map(x => `${x.id.slice(0, 12)} ${x.tool}`).join(', ')}; read back the real state, then runtime_reconcile with what you observed`);
   }
   unknownActions(workspace) {
     return this.db.prepare("SELECT id,tool,input_hash,session,updated FROM actions WHERE workspace=? AND state='unknown' ORDER BY updated,rowid").all(workspace);

@@ -7,7 +7,17 @@ import { check, digest } from './util.mjs';
 // semantics (limit, freshness, scope) belong to OMP and zvec, never to this table.
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'mcp__zvec_grep_search', 'runtime_status', 'runtime_evidence']);
 // runtime_reconcile is the way out of RECONCILIATION_REQUIRED and must not itself be an effect the gate holds.
-const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'runtime_checkpoint', 'runtime_reconcile']);
+// `yield` submits a subagent's result and `hub` coordinates peers: gating those strands an agent that
+// has nothing else to call. Only hub's process ops (start/stop/restart, stdin to a named process)
+// reach outside the session.
+const SESSION_TOOLS = new Set(['todo', 'goal', 'ask', 'yield', 'runtime_checkpoint', 'runtime_reconcile']);
+const HUB_PROCESS_OPS = new Set(['start', 'stop', 'restart']);
+function hubCoordinates(input) {
+  const op = input?.op;
+  if (typeof op !== 'string' || HUB_PROCESS_OPS.has(op)) return false;
+  // `send`/`wait` addressed to a process name write to or watch that process, not a peer.
+  return typeof input?.name !== 'string';
+}
 const PATH_EDIT_TOOLS = new Set(['edit', 'ast_edit']);
 
 const DEVICE_PATH = /^xd:\/\/([A-Za-z0-9_.:-]+)/;
@@ -34,6 +44,7 @@ export function classify(call, config = {}, root, hop = 0) {
   if (PATH_EDIT_TOOLS.has(toolName) && root && ordinaryWorkspacePath(root, input?.path)) return { kind: 'workspace-write' };
   if (READ_TOOLS.has(toolName)) return { kind: 'read' };
   if (SESSION_TOOLS.has(toolName)) return { kind: 'session-write' };
+  if (toolName === 'hub' && hubCoordinates(input)) return { kind: 'session-write' };
   // Exact registered names only; never treat arbitrary MCP tools as read-only.
   if ((config.memoryReadTools ?? []).includes(toolName)) return { kind: 'read', source: 'canonical-memory' };
   // Infrastructure declarations are supplied by a trusted adapter, never parsed from shell text.

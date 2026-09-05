@@ -146,3 +146,14 @@ test('sensitive reads are journaled for audit without being blocked', async t =>
   assert.equal(await f.kernel.intent(call({ toolName: 'read', input: { path: '/etc/hosts' } })), undefined);
   assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'read.sensitive').length, 1);
 });
+
+test('the agent control plane is a session write: a subagent can always submit and coordinate', async t => {
+  const f = await fixture(t); const cfg = runtimeConfig({});
+  const kind = input => classify(call({ toolName: 'hub', input }), cfg, f.root).kind;
+  assert.equal(classify(call({ toolName: 'yield', input: { result: 'done' } }), cfg, f.root).kind, 'session-write');
+  assert.equal(kind({ op: 'send', to: 'Main', message: 'x' }), 'session-write');
+  assert.equal(kind({ op: 'wait' }), 'session-write');
+  assert.equal(kind({ op: 'start', name: 'web', application: 'bun' }), 'opaque-exec', 'starting a process is an effect');
+  assert.equal(kind({ op: 'send', name: 'web', text: 'q' }), 'opaque-exec', 'stdin to a process is an effect');
+  assert.equal(isEffect(classify(call({ toolName: 'yield', input: {} }), cfg, f.root)), false);
+});
