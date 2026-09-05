@@ -4,10 +4,13 @@ import { realpathSync } from 'node:fs';
 import { RuntimeKernel } from '../src/kernel.mjs';
 import { fixture, call, run, action } from './helpers.mjs';
 
-const T = { search: 'mcp__clab_mem_mem_search', read: 'mcp__clab_mem_mem_read', status: 'mcp__clab_mem_mem_status', lookup: 'mcp__clab_mem_mem_task_lookup', taskRead: 'mcp__clab_mem_mem_task_read', start: 'mcp__clab_mem_mem_task_start' };
+const T = {
+  recall: 'mcp__gbrain_recall', entity: 'mcp__gbrain_entity', pack: 'mcp__gbrain_context_pack',
+  synthesize: 'mcp__gbrain_synthesize', remember: 'mcp__gbrain_remember'
+};
 const config = {
-  memoryReadTools: [T.search, T.read, T.status, T.lookup, T.taskRead], memoryWriteTools: [T.start], memoryTaskStartTool: T.start,
-  recall: { mode: 'require', tools: [T.search, T.lookup, T.taskRead] }
+  memoryReadTools: [T.recall, T.entity, T.pack, T.synthesize], memoryWriteTools: [T.remember],
+  recall: { mode: 'require', tools: [T.recall, T.entity, T.pack] }
 };
 const mem = (id, toolName, input = { query: 'q' }) => call({ toolCallId: id, toolName, input });
 const bash = id => call({ toolCallId: id });
@@ -15,22 +18,21 @@ const bash = id => call({ toolCallId: id });
 test('the first effect of a goal runs only after a recall settled in an earlier turn; same-turn intents prove nothing', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
   assert.equal(await run(f.kernel, call({ toolCallId: 'r0', toolName: 'read', input: { path: 'source.txt' } })), undefined, 'reads never wait');
-  const search = mem('q1', T.search);
-  assert.equal(await f.kernel.intent(search), undefined);
+  const recall = mem('q1', T.recall);
+  assert.equal(await f.kernel.intent(recall), undefined);
   assert.match((await f.kernel.intent(bash('b1'))).reason, /RECALL_REQUIRED/, 'a parallel effect in the same message is refused');
-  f.kernel.settle('q1', T.search, { result: { content: [{ type: 'text', text: 'hits=0 embedding=x' }] }, isError: false, phase: 'result' });
-  f.kernel.settle('q1', T.search, { result: { content: [{ type: 'text', text: 'hits=0 embedding=x' }] }, isError: false, phase: 'end' });
+  for (const phase of ['result', 'end']) f.kernel.settle('q1', T.recall, { result: { content: [{ type: 'text', text: '{"total": 0, "facts": []}' }] }, isError: false, phase });
   assert.match((await f.kernel.intent(bash('b2'))).reason, /settles this turn/, 'settled, but not yet visible to the model');
   assert.equal(f.kernel.context().recall.state, 'settling');
   f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('b3')), undefined); assert.equal(action(f, bash('b3')).state, 'succeeded');
   assert.equal(f.kernel.context().recall.state, 'done');
 });
-test('a failed recall settles the gate; status and document reads do not count as recall', async t => {
+test('a failed recall settles the gate; a canonical-memory read outside recall.tools does not', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  await run(f.kernel, mem('s1', T.status, {})); await run(f.kernel, mem('d1', T.read, { id: 'x' })); f.kernel.turnStart();
+  await run(f.kernel, mem('s1', T.synthesize, { question: 'what is x' })); f.kernel.turnStart();
   assert.match((await f.kernel.intent(bash('b1'))).reason, /RECALL_REQUIRED/);
-  await run(f.kernel, mem('q1', T.search), { isError: true }); f.kernel.turnStart();
+  await run(f.kernel, mem('q1', T.recall), { isError: true }); f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('b2')), undefined, 'an unreachable backend does not stop work');
   assert.equal(f.kernel.context().recall.state, 'failed');
 });
@@ -38,37 +40,33 @@ test('no number of refused effects releases the gate; only a settled recall does
   const f = await fixture(t, { config }); f.kernel.turnStart();
   for (let i = 0; i < 10; i++) { assert.match((await f.kernel.intent(bash(`b${i}`))).reason, /RECALL_REQUIRED/); f.kernel.turnStart(); }
   assert.equal(f.kernel.context().recall.state, 'pending'); assert.equal(f.kernel.context().effectsUsed, 0);
-  await run(f.kernel, mem('l1', T.lookup, { query: 'k' })); f.kernel.turnStart();
+  await run(f.kernel, mem('p1', T.pack, { entities: 'concepts/x' })); f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('ok')), undefined);
 });
 test('a new goal requires its own recall', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  await run(f.kernel, mem('q1', T.search)); f.kernel.turnStart(); assert.equal(await run(f.kernel, bash('b1')), undefined);
+  await run(f.kernel, mem('q1', T.recall)); f.kernel.turnStart(); assert.equal(await run(f.kernel, bash('b1')), undefined);
   f.store.mirrorGoal(f.lease, { id: 'goal-2', status: 'active' });
   assert.match((await f.kernel.intent(bash('b2'))).reason, /RECALL_REQUIRED/);
-  await run(f.kernel, mem('q2', T.search)); f.kernel.turnStart(); assert.equal(await run(f.kernel, bash('b3')), undefined);
+  await run(f.kernel, mem('q2', T.recall)); f.kernel.turnStart(); assert.equal(await run(f.kernel, bash('b3')), undefined);
 });
-test('a resumed session with a task record must read that record, not merely search', async t => {
+test('a resumed session recalls again: the gate is per goal, and a new epoch has none of the old settles', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  await run(f.kernel, mem('q1', T.search)); f.kernel.turnStart();
-  await run(f.kernel, mem('s1', T.start, { task_key: 'k', task: 't' }));
+  await run(f.kernel, mem('q1', T.recall)); f.kernel.turnStart();
+  assert.equal(await run(f.kernel, bash('b1')), undefined);
   f.store.release(f.lease);
   const lease = f.store.acquire(f.workspace.id, 'session'); assert.equal(lease.epoch, 2);
   const k = new RuntimeKernel({ store: f.store, lease, root: f.root, config }); k.turnStart();
-  await run(k, mem('q2', T.search)); k.turnStart();
-  assert.match((await k.intent(bash('b1'))).reason, /read task record k/);
-  await run(k, mem('t0', T.taskRead, { task_key: 'k' }), { isError: true }); k.turnStart();
-  assert.match((await k.intent(bash('b0'))).reason, /read task record k/, 'a failed read of the record proves nothing');
-  await run(k, mem('t1', T.taskRead, { task_key: 'k' })); 
-  assert.match((await k.intent(bash('b2'))).reason, /RECALL_REQUIRED/, 'read this turn is not yet visible');
-  k.turnStart(); assert.equal(await run(k, bash('b3')), undefined);
+  assert.match((await k.intent(bash('b2'))).reason, /RECALL_REQUIRED/, 'the previous epoch proves nothing');
+  await run(k, mem('q2', T.recall)); k.turnStart();
+  assert.equal(await run(k, bash('b3')), undefined);
 });
 test('a dispatched recall satisfies the gate; the xd:// envelope is not itself an effect', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  const wrapper = call({ toolCallId: 'w1', toolName: 'write', input: { path: `xd://${T.search}`, content: JSON.stringify({ query: 'q' }) } });
+  const wrapper = call({ toolCallId: 'w1', toolName: 'write', input: { path: `xd://${T.recall}`, content: JSON.stringify({ query: 'q' }) } });
   assert.equal(await run(f.kernel, wrapper), undefined, 'the envelope dispatches a read, so the gate cannot hold it');
   assert.equal(action(f, wrapper).is_effect, 0);
-  await run(f.kernel, mem('w1', T.search)); // the nested dispatch reuses the outer toolCallId
+  await run(f.kernel, mem('w1', T.recall)); // the nested dispatch reuses the outer toolCallId
   assert.match((await f.kernel.intent(bash('b1'))).reason, /settles this turn/);
   f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('b2')), undefined);
@@ -85,16 +83,17 @@ test('the operator can release the gate for one goal; nothing the model calls ca
   assert.match((await f.kernel.intent(bash('b3'))).reason, /RECALL_REQUIRED/, 'the override does not outlive its goal');
 });
 test('advise mode reports recall state without refusing anything', async t => {
-  const f = await fixture(t, { config: { ...config, recall: { mode: 'advise', tools: [T.search] } } }); f.kernel.turnStart();
+  const f = await fixture(t, { config: { ...config, recall: { mode: 'advise', tools: [T.recall] } } }); f.kernel.turnStart();
   assert.equal(await run(f.kernel, bash('b1')), undefined); assert.equal(f.kernel.context().recall.state, 'pending');
 });
-test('search hits that were never read are journaled as shallow recall', async t => {
+test('a corpus-wide recall that was never followed by an entity read is journaled as shallow', async t => {
   const f = await fixture(t, { config }); f.kernel.turnStart();
-  await run(f.kernel, mem('q1', T.search), { text: 'hits=3 embedding=x\n[1] a.md' }); f.kernel.turnStart();
+  await run(f.kernel, mem('q1', T.recall), { text: '{"total": 3, "facts": [{"fact": "a"}]}' }); f.kernel.turnStart();
   await run(f.kernel, bash('b1'));
   assert.equal(f.store.events(f.workspace.id).filter(e => e.kind === 'recall.shallow').length, 1); assert.equal(f.kernel.context().recall.hits, 3);
   const g = await fixture(t, { config }); g.kernel.turnStart();
-  await run(g.kernel, mem('q1', T.search), { text: 'hits=3 embedding=x' }); await run(g.kernel, mem('d1', T.read, { id: 'doc' })); g.kernel.turnStart();
+  await run(g.kernel, mem('q1', T.recall), { text: '{"total": 3}' });
+  await run(g.kernel, mem('e1', T.entity, { entity: 'concepts/x' })); g.kernel.turnStart();
   await run(g.kernel, bash('b1'));
   assert.equal(g.store.events(g.workspace.id).filter(e => e.kind === 'recall.shallow').length, 0);
 });

@@ -25,15 +25,15 @@
       "corePatch": "none"
     },
     {
-      "repository": "deeplethe/utopia",
-      "commit": "05492969662de90efb6dc8c69fbb8d282142a738",
+      "repository": "garrytan/gbrain",
+      "commit": "aa820c7f9934f3c23fbf67ff9f3ecd03831cf30f",
       "license": "Apache-2.0",
       "corePatch": "none"
     },
     {
-      "repository": "local checkout of clab-one/clab-mem",
-      "file": "mcp/server.ts",
-      "note": "tool names and read/write semantics for memoryReadTools"
+      "repository": "clab-one/gbrain-server",
+      "file": "deploy/gbrain.yaml",
+      "note": "the memory verb surface the runtime classifies: recall/entity/context_pack/delta/synthesize read, remember/forget write"
     }
   ],
   "inputs": {

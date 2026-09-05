@@ -14,15 +14,15 @@
              ┌────────┼─────────┬──────────┬──────────┐
              │        │         │          │          │
         journal    evidence   zvec      recall     memory gates
-      (~/.omp/    (hash 영수증) (read 관측) (첫 효과 전) (receipt 검증, 후보 핀)
+      (~/.omp/    (hash 영수증) (read 관측) (첫 효과 전) (전송 전 검사, read-back)
        runtime)                                        │ 모델이 MCP 로 전송
                                                        ▼
-                                                Utopia / clab-mem  = 정본
+                                                       gbrain  = 정본
 ```
 
-역할 분리는 유지한다: `OMP = reasoning + action + search routing`, `zvec-grep = workspace retrieval`, `Utopia = canonical knowledge`. 이 계층은 네 번째 에이전트 프레임워크가 아니라 실행의 유효성을 제한하고 결과를 기록하는 얇은 층이다. 별도 모델 루프, 스케줄러, 벡터 DB, 웹 서비스는 없다.
+역할 분리는 유지한다: `OMP = reasoning + action + search routing`, `zvec-grep = workspace retrieval`, `gbrain = canonical knowledge`. 이 계층은 네 번째 에이전트 프레임워크가 아니라 실행의 유효성을 제한하고 결과를 기록하는 얇은 층이다. 별도 모델 루프, 스케줄러, 벡터 DB, 웹 서비스는 없다.
 
-**권한은 에이전트에게 있다.** 사람 승인은 Kubernetes(clab-cluster 제외)에만 남는다 — `kubernetes-approval.ts`와 §5.1. 이 계층이 강제하는 것은 권한이 아니라 **절차**다: goal의 첫 효과 전에 회상이 settle되어 있을 것, 결과 불명인 효과는 read-back 뒤에 attestation으로 닫을 것, 정본 승격은 서명된 receipt가 검증된 뒤에만 `published`로 부를 것. 이 계층은 어떤 훅에서도 턴을 시작하거나 stop을 막지 않는다(`session_stop` 미등록). `agent_end`는 알림뿐이다.
+**권한은 에이전트에게 있다.** 사람 승인은 Kubernetes(clab-cluster 제외)에만 남는다 — `kubernetes-approval.ts`와 §5.1. 이 계층이 강제하는 것은 권한이 아니라 **절차**다: goal의 첫 효과 전에 회상이 settle되어 있을 것, 결과 불명인 효과는 read-back 뒤에 attestation으로 닫을 것, 정본 메모리에 쓰는 사실은 자격증명이 아니고 인용한 근거가 현재일 것. 이 계층은 어떤 훅에서도 턴을 시작하거나 stop을 막지 않는다(`session_stop` 미등록). `agent_end`는 알림뿐이다.
 
 검색을 잘하는 책임은 OMP와 zvec에 둔다. 에이전트는 위치를 모르는 의미·행동·구조·cross-file 질문에 zvec를 먼저 쓰고, 정확한 식별자·전수 occurrence는 native(`grep`/`rg`/LSP/`ast_grep`)로 찾고, 중요한 zvec hit는 현재 소스로 확인한 뒤 결정한다. 이 계층은 그 라우팅을 `before_agent_start` 상태의 `search` 키 한 줄로 전달할 뿐, zvec 호출의 입력(`limit`, `autoUpdate`, `hidden`, query group 수)을 바꾸거나 검색 전략을 결정하지 않는다. 이전 버전의 `boundedSearch`(입력 clamp·scope 키 제거·`search.foreign_root` 이벤트)는 이 이유로 제거했다 — 인덱스 freshness와 query semantics는 zvec 자신의 책임이다.
 
@@ -58,12 +58,12 @@ tool_execution_end   agent loop. result = middleware 통과 후 최종.
 
 - `intent(call)` — classify → decision → 메모리 쓰기 게이트(§6) → 회상 게이트(§3.1) → (opt-in) 정확 입력 승인 → unknown 해소 게이트 + 사용량 카운트 + `executing` 행. 거절은 `{block, reason}`으로 모델에 돌아간다. 입력은 절대 바꾸지 않는다.
 - `revise(id, name, args)` — 실행 입력 hash가 intent와 다르면 행을 갱신하고 `action.revised` 이벤트. 메모리 쓰기의 입력이 여기서 바뀌면 그 호출은 게이트를 통과한 intent가 아니므로 결과와 무관하게 `unknown`으로 닫는다(실행은 이 훅에서 막을 수 없다).
-- `settle(id, name, …, phase)` — 첫 관측이 결과를 확정한다. 이후 `isError`가 뒤집히면 `action.rewritten` 이벤트와 `rewrites` 카운트. `tool_result`가 오지 않는 경로(승인 거절, 다른 확장의 차단)는 `tool_execution_end`가 `failed`로 마감한다. 결과 본문은 관측(zvec `freshness:`, clab-mem `hits=`/`key=`)에만 쓰이고, 상태를 바꾸는 유일한 본문은 서명이 검증된 receipt다(§6).
+- `settle(id, name, …, phase)` — 첫 관측이 결과를 확정한다. 이후 `isError`가 뒤집히면 `action.rewritten` 이벤트와 `rewrites` 카운트. `tool_result`가 오지 않는 경로(승인 거절, 다른 확장의 차단)는 `tool_execution_end`가 `failed`로 마감한다. 결과 본문은 관측(zvec의 `freshness:`, 회상 결과의 `total`)에만 쓰이고, 저널 상태를 바꾸는 본문은 없다(§6).
 - `turnStart()` — `turn_start`와 `before_agent_start`에서 turn 카운터를 올린다. turn t에 settle된 결과는 t+1의 모델 호출에서 처음 보인다.
 
 ### 3.1 회상 게이트
 
-`recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `mem_search`와 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — Utopia가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 자동 해제는 없다: 차단 횟수·시간은 게이트를 풀지 못한다(횟수 기반 해제는 효과 재요청 두 번으로 통과되는 구조적 우회였다). `require`는 운영자의 선언이고, clab-mem이 없는 환경은 `advise`다. epoch이 오른 재개 세션에서 `memoryTask`가 알려져 있으면 그 키의 `mem_task_read`만 통과시킨다. `mem_status`·`mem_read`는 회상이 아니다(telemetry). `hits>0`인 검색 뒤 읽기 없이 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
+`recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `recall`과 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — 정본 메모리가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 자동 해제는 없다: 차단 횟수·시간은 게이트를 풀지 못한다(횟수 기반 해제는 효과 재요청 두 번으로 통과되는 구조적 우회였다). `require`는 운영자의 선언이고, clab-mem이 없는 환경은 `advise`다. epoch이 오른 재개 세션에서 `memoryTask`가 알려져 있으면 그 키의 `mem_task_read`만 통과시킨다. `mem_status`·`mem_read`는 회상이 아니다(telemetry). `hits>0`인 검색 뒤 읽기 없이 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
 
 `write({path:"xd://<tool>"})`는 봉투일 뿐이라 **디스패치되는 도구로** 분류한다(`src/policy.mjs`의 `dispatched`). 봉투를 opaque write로 보면 디스패치된 회상 read가 효과가 되어 recall 게이트가 자기 자신을 막는다. 게이트가 실제 인자를 필요로 하는 검사(메모리 쓰기)는 중첩 호출 쪽에서 돌고, 봉투는 kind만 물려받는다.
 
@@ -88,9 +88,9 @@ events, evidence, outbox(+session), approvals(+session)
 
 액션 ID는 `digest({session, tool, toolCallId})`. 같은 ID의 재디스패치는 거절한다(과거 성공을 재사용하는 것은 임의 도구에 안전하지 않다). 재개는 epoch만 올리고 사용량 카운터(`tool_calls`, `effects_used`)는 이어진다. 카운터는 관측용이다 — 상한도, 갱신 명령도 없다. 사람이 있는 세션이든 무인이든 카운터가 작업을 멈추는 경로는 두지 않는다.
 
-`reconcile`은 read-back의 attestation이다. 에이전트가 `runtime_reconcile`로(저널 `by: session`, `observed`에 확인한 내용), 사람이 `/runtime reconcile`로, 또는 서명이 검증된 receipt가(`by: receipt`) 닫는다. 근거 영수증은 선택 사항이다. 이전 버전처럼 근거를 필수로 요구하면 "터미널 닫다가 끊긴 bash 한 번"을 풀기 위해 파일 hash를 먼저 만들어야 했다.
+`reconcile`은 read-back의 attestation이다. 에이전트가 `runtime_reconcile`로(저널 `by: session`, `observed`에 확인한 내용) 또는 사람이 `/runtime reconcile`로 닫는다. 근거 영수증은 선택 사항이다. 이전 버전처럼 근거를 필수로 요구하면 "터미널 닫다가 끊긴 bash 한 번"을 풀기 위해 파일 hash를 먼저 만들어야 했다.
 
-`unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`/`memoryPublishTool`이면 `remote:clab-mem`, 아니면 workspace다(schema 변경 없이 유도). workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다 — 재발행이 서버의 append를 중복시킬 수 있기 때문이다. 예외는 같은 intent의 재발행(같은 도구·task key·`idempotency_key`)뿐이다: 서버가 dedupe하고 그 receipt가 원래 행을 닫는다.
+`unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다(schema 변경 없이 유도). workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다 — 다시 쓰면 같은 사실이 두 번 들어갈 수 있기 때문이다. 예외는 없다: 읽어서 확인한 뒤 attestation으로 닫는다.
 
 메모리에 관한 사실은 저장하지 않고 저널에서 유도한다: `memoryTask`(이 세션이 마지막으로 start/note/complete한 키)는 `memory.task_observed` 이벤트에서, `effectsSinceNote`는 마지막 메모리 쓰기 행 이후의 settle된 효과 수에서(`rowid` 경계 — 한 tick에 여러 행이 들어온다). crash 뒤에도 resume card가 같은 값을 낸다.
 
@@ -108,19 +108,25 @@ events, evidence, outbox(+session), approvals(+session)
 
 ## 6. 메모리
 
-zvec에는 code/workspace 문서만. Utopia 원문을 다시 색인하지 않는다. 검색 결과는 evidence이지 truth가 아니다 — `runtime_evidence`로 현재 원문 hash를 남긴 뒤에만 후보의 근거가 된다.
+zvec에는 code/workspace 문서만. 정본 기록을 다시 색인하지 않는다. 검색 결과는 evidence이지 truth가 아니다 — `runtime_evidence`로 현재 원문 hash를 남긴 뒤에만 사실의 근거가 된다.
 
-기록 종류마다 경로가 하나다. **작업 원장**은 clab-mem의 `mem_task_*`를 모델이 직접 호출한다. **정본 승격**은 `runtime_memory_candidate`(kind는 `decision/constraint/incident/procedure/checkpoint`, evidence 필수, payload hash 고정) → 모델이 `mem_publish` 호출 → `submitted` → 검증된 receipt로만 `published`. 사람 승인 단계는 없다(권한 모델). 두 경로 모두 전송 주체는 모델이다: 이 프로세스는 MCP 도구를 호출할 수 없고(`ctx.invokeTool`은 같은 이름의 native built-in 위임뿐, `omp://extensions.md`), 이 맥에서는 bun/node가 `mem.clab.one`에 TCP 연결 자체를 못 한다(clab-mem `transport.md`). 런타임 소유 전송(`CanonicalMemoryPort`/outbox 송신)은 그래서 제거했다.
+정본 메모리는 gbrain이고, 쓰는 주체는 모델이다. 이 프로세스는 MCP 도구를 호출할 수 없으므로(`ctx.invokeTool`은 같은 이름의 built-in 위임뿐) 런타임이 전송을 소유하는 설계는 애초에 불가능하다. 이 계층이 소유하는 것은 **의무와 정합성**이다.
 
-clab-mem의 쓰기 4종(`start/note/complete/supersede`)은 전부 비멱등 append다 — `start`도 기존 키에 `재개` 절을, `supersede`도 `폐기` 절을 붙인다. 오류 응답은 커밋 여부를 말하지 않는다(curl 28/52/56). 그래서:
+읽기는 `recall`(질의는 코퍼스 조망, `entity`는 아는 대상), `entity`, `context_pack`, `delta`, `synthesize`. 쓰기는 `remember`(사실 하나 + provenance 필수)와 `forget`(id로 만료). 한 도구가 읽기·쓰기 목록에 동시에 들어갈 수 없다 — 게이트가 다르다.
 
-- 쓰기의 `isError`는 `unknown(remote:clab-mem)`. 예외 없음 — `sent=no` 같은 텍스트 토큰으로 강등하지 않는다. 텍스트는 middleware가 바꿀 수 있고, 중복 절은 append-only 저장소에서 지워지지 않는다.
-- 서버(`mcp/server.ts`)는 `idempotency_key`를 필수로 받아 절에 마커를 넣고, 같은 마커가 있으면 다시 붙이지 않는다. 같은 기계의 기록자는 SQLite 파일 lock(`BEGIN IMMEDIATE`, 프로세스가 죽으면 커널이 해제)으로 직렬화하고, 바탕은 문서 행 `sha256`과 정확히 같은 바이트만 쓰며, 민 뒤 sha를 다시 읽어 덮어쓰기를 잡아 재적용한다(`mcp/commit.ts`). Utopia ingest에는 CAS가 없으므로 이것이 lost-update에 대한 방어다.
-- 서버는 결과 **첫 줄**에 Ed25519로 서명한 receipt를 싣는다: `receipt outcome=committed key=… idem=… action=… sha=… doc=… at=… sig=…`(publish는 `candidate=… payload=…`). 연결 단계 실패(curl 6/7/35)에만 `outcome=not_sent` — 그것도 이 커밋에서 push가 하나도 돌아오지 않았을 때만(push 뒤의 확인이 연결에 실패하면 결과 불명). 런타임은 `memoryReceiptPublicKey`로 서명을 검증하고, receipt가 **자기 호출**(도구·task key·idempotency key; publish는 후보 id + staged payload hash)에 정확히 묶일 때만 상태를 바꾼다: `not_sent` → `failed`, `committed` → 같은 intent의 이전 `unknown` 행을 `reconciled(by: receipt)`, publish → `published`. 서명이 없거나 다르거나 다른 intent를 가리키면 `memory.receipt_observed{verified:false}` 한 줄이고 상태는 그대로다.
-- 전송 전 검사(전부 구조적): 자격증명 패턴(`MEMORY_SECRET` — 한 번 들어가면 `document_versions`에서 안 지워진다), 인용된 evidence의 현재성(`STALE_EVIDENCE`), 직전 clab-mem 호출이 실패했으면 상태 읽기 먼저(`MEMORY_BACKEND_DEGRADED` — 장애 중 unknown이 쌓이지 않게), 이 세션에서 start/read로 확인되지 않은 task key(`MEMORY_TASK_NOT_STARTED` — "키가 없으면 실패"를 오류가 아니라 게이트로), publish 입력이 후보와 정확히 일치(`MEMORY_CANDIDATE_MISMATCH`).
-- 인용 없는 note는 허용하고 `memory.unverified`로 센다. 작업 원장의 실패·차단 note는 파일 범위와 무관한 경우가 많다.
+쓰기의 결과 본문은 전부 telemetry다. 서버가 강제하는 멱등 키가 없고 중복 판정은 임베딩 유사도이므로, "성공"이라는 텍스트도 "같은 사실이 한 번만 들어갔다"를 증명하지 않는다. 그래서:
+
+- 쓰기의 `isError`는 `unknown(remote)`이다. 기록됐는지 알 수 없다는 뜻이고, 문구를 바꿔 다시 쓰는 것은 두 번 기록할 위험이다.
+- 실행 입력이 게이트 통과 후 바뀐 쓰기(`action.revised`)는 성공해도 `unknown`이다. 게이트를 통과한 intent가 아니다.
+- 해소는 하나뿐이다: 기록을 읽어(`recall`/`entity`) 실제 상태를 확인한 뒤 `runtime_reconcile`에 관측한 내용을 적는다. 저널에 `by: session`으로 남는다.
+- 전송 전 검사(전부 구조적): 자격증명 패턴(`MEMORY_SECRET` — 한 번 들어가면 정본에서 지우기 어렵다), 인용된 evidence의 현재성(`STALE_EVIDENCE`), 직전 메모리 호출이 실패·불명이면 읽기 먼저(`MEMORY_BACKEND_DEGRADED` — 장애 중 unknown이 쌓이지 않게).
+- 근거를 인용하지 않은 사실은 허용하고 `memory.unverified`로 센다. 결정·제약·사고 기록은 파일 범위와 무관한 경우가 많다.
+
+`unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다. workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다. 메모리 쓰기 하나가 불명이라고 작업 트리 작업이 멈추지는 않는다.
 
 `agent_end`에서 `effectsSinceNote > 0`이면 한 줄 알린다. 기록하라고 말하는 것은 사용자다 — 이 계층은 continue를 하지 않는다.
+
+로컬 staging 단계는 두지 않는다. 정본 쓰기 도구가 곧 정본이고, 같은 사실을 두 곳에 두면 어느 쪽이 사실인지 물어야 한다. `runtime_checkpoint`는 정본이 아니라 이 세션의 복구 상태다.
 
 ## 7. 결정 기록과 이견
 
@@ -134,10 +140,9 @@ clab-mem의 쓰기 4종(`start/note/complete/supersede`)은 전부 비멱등 app
 | `memoryReadTools` 사전 채움 | 빈 배열 | 서버 소스와 실행 중 라우트에서 이름·읽기 여부 확인 |
 | 회상 게이트를 turn 기준 settle로 | intent 관측 1건 | 병렬 tool call은 실행 전에 모두 intent를 지나고, 같은 메시지의 효과는 회상 결과를 읽지 않은 결정이다 |
 | 횟수 기반 해제 없음 | N회 차단 후 advise로 강등 | 효과 재요청 두 번이면 통과되는 구조적 우회. 부재는 관측 불가하므로 config가 선언한다 |
-| 쓰기 오류는 전부 `unknown` | `sent=no` 텍스트로 `failed` 강등 | 텍스트는 middleware가 바꾸고 중복 절은 지워지지 않는다. 강등은 서명·바인딩된 receipt만 |
-| 모델이 전송, 런타임은 검증 | outbox HTTP/stdio 바인딩 | `invokeTool`은 same-tool 위임뿐, bun은 `mem.clab.one` 연결 불가. 둘째 클라이언트는 이중 구현 |
+| 쓰기 오류는 전부 `unknown` | 결과 텍스트로 `failed` 강등 | 텍스트는 middleware가 바꿀 수 있고 중복 기록은 지우기 어렵다. 강등할 근거가 없다 |
+| 모델이 전송, 런타임은 검증 | 런타임이 소유한 전송 계층 | `invokeTool`은 same-tool 위임뿐이다. 둘째 클라이언트는 이중 구현 |
 | `agent_end` 알림만 | `session_stop` continue | 둘째 자율 루프 금지(`AGENTS.runtime.md`). 사용자가 continuation 권한자 |
-| candidate 큐 유지 | 삭제 | 작업 원장과 정제된 승격은 다른 기록이다. 제거한 것은 런타임 소유 전송뿐 |
 
 ## 8. 남은 통합 게이트
 

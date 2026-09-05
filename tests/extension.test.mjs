@@ -36,7 +36,7 @@ async function harness(t, { hasUI = true, omit = [], config, required = false } 
 
 test('loads with the tested contract, journals a full tool cycle, and reports compat ok', async t => {
   const h = await harness(t);
-  assert.equal(h.pi.label, 'AGI Runtime'); assert.equal(h.tools.size, 5); assert.ok(h.commands.has('runtime'));
+  assert.equal(h.pi.label, 'AGI Runtime'); assert.equal(h.tools.size, 4); assert.ok(h.commands.has('runtime'));
   for (const event of ['turn_start', 'agent_end', 'session_compact', 'auto_compaction_end']) assert.ok(h.handlers.has(event), event);
   assert.equal(h.handlers.has('session_stop'), false, 'the runtime never continues or blocks a stop');
   await h.handlers.get('session_start')({}, h.ctx);
@@ -52,22 +52,19 @@ test('loads with the tested contract, journals a full tool cycle, and reports co
   assert.deepEqual(state.usage, { toolCalls: 3, effects: 2 }); assert.equal(state.blockedUntilReconciled, false);
   assert.equal(state.search.semanticDiscovery, 'mcp__zvec_grep_search');
 });
-test('runtime tools chain evidence into checkpoint and memory candidate without remote writes', async t => {
+test('runtime tools chain evidence into a checkpoint, and no runtime tool writes to canonical memory', async t => {
   const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
   const evidence = await h.tools.get('runtime_evidence').execute('e1', { path: 'code.txt', start: 1, end: 1 }, undefined, undefined, h.ctx);
   assert.ok(evidence.details.evidenceId); assert.equal(evidence.details.verified, true);
   await h.tools.get('runtime_checkpoint').execute('c1', { summary: '근거 확인 완료', nextAction: '구현', evidenceIds: [evidence.details.evidenceId] }, undefined, undefined, h.ctx);
-  const candidate = await h.tools.get('runtime_memory_candidate').execute('m1', { kind: 'decision', title: '결정', content: '확장 우선 구조를 채택한다.', evidenceIds: [evidence.details.evidenceId] }, undefined, undefined, h.ctx);
-  assert.equal(candidate.details.canonical, false); assert.equal(candidate.details.publishWith, null);
   const status = (await h.tools.get('runtime_status').execute('s1', {}, undefined, undefined, h.ctx)).details;
-  assert.equal(status.checkpoint.summary, '근거 확인 완료'); assert.equal(status.pendingMemory, 1);
-  // No publish command exists any more: the model is the transport, and nothing here talks to a remote.
-  await h.commands.get('runtime').handler(`publish ${candidate.details.candidateId}`, h.ctx);
+  assert.equal(status.checkpoint.summary, '근거 확인 완료');
+  assert.deepEqual([...h.tools.keys()].filter(name => /memory|candidate|publish/.test(name)), [], 'the model writes memory with its own tool');
+  await h.commands.get('runtime').handler('publish anything', h.ctx);
   assert.match(h.ctx.notices.at(-1).message, /UNKNOWN_RUNTIME_COMMAND/);
-  const s = await h.openJournal(); assert.equal(s.outbox(candidate.details.candidateId).state, 'candidate');
 });
 test('runtime_reconcile passes the boundary while a workspace unknown and the recall gate hold effects, and journals who attested', async t => {
-  const memory = 'mcp__clab_mem_mem_search';
+  const memory = 'mcp__gbrain_recall';
   const h = await harness(t, { config: { memoryReadTools: [memory], recall: { mode: 'require', tools: [memory] } } }); await h.handlers.get('session_start')({}, h.ctx);
   const s = await h.openJournal(); const ghost = s.acquire(s.workspace(h.root).id, 'ghost', { ttl: 1000 });
   s.beginAction(ghost, { actionId: 'ghost-1', tool: 'bash', input: { command: 'deploy' } });
@@ -93,7 +90,7 @@ test('agent_end only notifies about unrecorded effects, and a re-attach hands th
   assert.equal(state().resume, undefined, 'a fresh session has nothing to resume');
   await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } });
   const before = h.ctx.notices.length; await h.handlers.get('agent_end')({}, h.ctx);
-  assert.match(h.ctx.notices.at(-1).message, /effects 1 since the last memory note/); assert.equal(h.ctx.notices.length, before + 1);
+  assert.match(h.ctx.notices.at(-1).message, /1 effects since the last canonical-memory write/); assert.equal(h.ctx.notices.length, before + 1);
   assert.equal(state().memory.effectsSinceNote, 1);
   await h.handlers.get('session_switch')({}, h.ctx);
   const card = state().resume;

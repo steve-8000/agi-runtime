@@ -4,27 +4,22 @@
   "headlessEffects": "allow",
   "requireApproval": [],
   "memoryReadTools": [
-    "mcp__clab_mem_mem_search",
-    "mcp__clab_mem_mem_read",
-    "mcp__clab_mem_mem_status",
-    "mcp__clab_mem_mem_task_lookup",
-    "mcp__clab_mem_mem_task_read"
+    "mcp__gbrain_recall",
+    "mcp__gbrain_entity",
+    "mcp__gbrain_context_pack",
+    "mcp__gbrain_delta",
+    "mcp__gbrain_synthesize"
   ],
   "memoryWriteTools": [
-    "mcp__clab_mem_mem_task_start",
-    "mcp__clab_mem_mem_task_note",
-    "mcp__clab_mem_mem_task_complete",
-    "mcp__clab_mem_mem_supersede"
+    "mcp__gbrain_remember",
+    "mcp__gbrain_forget"
   ],
-  "memoryTaskStartTool": "mcp__clab_mem_mem_task_start",
-  "memoryPublishTool": "mcp__clab_mem_mem_publish",
-  "memoryReceiptPublicKey": "",
   "recall": {
     "mode": "require",
     "tools": [
-      "mcp__clab_mem_mem_search",
-      "mcp__clab_mem_mem_task_lookup",
-      "mcp__clab_mem_mem_task_read"
+      "mcp__gbrain_recall",
+      "mcp__gbrain_entity",
+      "mcp__gbrain_context_pack"
     ]
   },
   "structuredOperationTools": [],

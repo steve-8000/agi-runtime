@@ -4,6 +4,6 @@ This package contains newly authored integration code that runs as an OMP extens
 
 - can1357/oh-my-pi: MIT, pinned in source-pins.json.
 - zvec-ai/zvec-grep: Apache-2.0, pinned in source-pins.json.
-- deeplethe/utopia: Apache-2.0, pinned in source-pins.json.
+- garrytan/gbrain: MIT, pinned in source-pins.json.
 
 No AGI, certification, security audit or production-readiness endorsement is implied by an upstream license.

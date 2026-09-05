@@ -6,17 +6,14 @@
 
 | 검사 | 결과 | 범위 | 증거 |
 |---|---|---|---|
-| `node --experimental-strip-types --test tests/*.test.mjs` | 82 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템·Ed25519 키. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
+| `node --experimental-strip-types --test tests/*.test.mjs` | 76 passed, 0 failed | 실제 SQLite(node:sqlite)·파일 시스템. OMP는 v18.1.10 이벤트 모양의 mock | `evidence/node-test.tap` |
 | `node scripts/check.mjs` | JS 23개 syntax, `tsc -p .` 통과 | `types/pi-coding-agent.d.ts`에 대한 typecheck. 전체 OMP typecheck 아님 | `evidence/check.jsonl` |
-| `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 불명 note → 백엔드 검사 거절 → status → 서명 receipt로 `reconciled`, publish 성공만으로 `submitted`, receipt로 `published` | offline, 스크립트가 만든 임시 서명키. 모델·원격 호출 없음 | `evidence/demo.json` |
-| `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, counters intents/starts/results/ends 2/2/2/2, **`turns: 3`**(이전 실행 4; 프롬프트 1 + 모델 호출당 `turn_start`) | auto-discovery 경로로 실제 `omp -p` 1회. `turn_start`가 18.1.10에서 실제로 발화함을 확인 | `evidence/compat-live.json` |
-| `node scripts/doctor.mjs` | `ready:true`; tested-version `tested`, compat-report `ok`, `memory-receipts: verifiable` | 실제 설치 상태 | `evidence/doctor.json` |
-| clab-mem `bun test` | 120 passed (커밋 규약 14개 신규: 마커 dedupe, 덮어쓰기 재적용, 위에 쌓기, 청크 지연 대기, ready 미도달 거부, 손실 복원 거부·정규화 일치 허용, 읽는 중 행 변경 재읽기, 정확 캐시, 상한 실패, inspect가 duplicate보다 먼저, `not_sent`는 push 이전 연결 실패에만, SQLite 쓰기 lock: 같은 프로세스 큐 직렬화, 다른 프로세스가 쥔 lock은 busy 초과 시 `NotSentError`·그 프로세스 종료 후 획득) | `lazy-project/clab-mem` | 본 문서 |
-| 청크 복원 fidelity 실측 | 정규화 전 0/40 일치, `render(parse(·))` 정규화 후 79/80 일치 | 실제 Utopia 기록 80건 | 본 문서 |
-| clab-mem 라이브 `mem_task_note` ×2 (같은 `idempotency_key`) | 1회차 `receipt outcome=committed … action=updated`, 2회차 `action=duplicate`, 기록에 마커 1개·절 2개(요구사항+진행) | 실제 Utopia(`mem.clab.one`), `/usr/bin/curl` 전송 | 본 문서 |
-| clab-mem 라이브 cache-miss note | 로컬 사본을 치운 뒤 새 키로 note → 복원·정규화 sha 일치 → `updated`, 이전 절 보존(절 3개, 마커 각 1개) | 다른 기계 경로의 실제 동작 | 본 문서 |
-| v2 저널 손상 행 마이그레이션 | `bun`·`node` 양쪽에서 open이 throw, `user_version=2`·원본 `outbox`·행 보존(문장별 실행 + ROLLBACK) | 두 SQLite 엔진의 실제 동작 | 본 문서 |
-| 서버 receipt → 런타임 `verifyReceipt` | 라이브 receipt 줄이 `memoryReceiptPublicKey`로 `verified:true`, 한 글자 바꾸면 `false` | 두 구현의 서명 호환 | 본 문서 |
+| `node scripts/demo.mjs` | 통과: 회상 거절 → settle → 다음 turn 허용, 오류난 쓰기 → `unknown` → 백엔드 검사 거절 → 읽기 성공 후에도 `RECONCILIATION_REQUIRED` → attestation 뒤 허용 → stale evidence 인용 거절 | offline. 모델·원격 호출 없음 | `evidence/demo.json` |
+| `scripts/compat.mjs --live` | `degraded:false`; offline `ok`, live `ok`, exit 0, `read`/`bash` 두 행 `succeeded`, compat report `ok`, contract 3, counters intents/starts/results/ends 2/2/2/2·`turns: 3` | 새 config(gbrain 도구·`recall.mode: require`)로 실제 `omp -p` 1회. 시작 명령 없이 attach·저널·게이트가 붙는다 | `evidence/compat-live.json` |
+| `node scripts/doctor.mjs` | `ready:true`; tested-version `tested`, compat-report `ok`, `memory-tools: valid` | 실제 설치 상태 | `evidence/doctor.json` |
+| 정본 메모리 라이브 왕복 | `remember` → `inserted`, `recall`(entity) → 그 사실을 그대로 반환, `search_degraded` 없음 | 실제 gbrain(`gbrain.clab.one/mcp`), 임베딩·chat은 맥의 `llm.clab.one` | 본 문서 |
+| pod 안 모델 도달성 | `gbrain models doctor` 5/5 reachable(임베딩 `openai:Qwen3-Embedding-0.6B-8bit` 1024차원, chat `llama-server:mtplx-…`), reranker `(none)` | 클러스터 pod에서 실제 HTTP | 본 문서 |
+| 저널 스키마 전진 마이그레이션 | 후보 큐 테이블이 있는 v3 저널을 열면 `user_version=4`·그 테이블 없음·`actions` 행 보존 | 실제 SQLite 파일 | `evidence/node-test.tap` |
 
 ## 라이브에서 확인한 것
 
@@ -28,7 +25,7 @@
 - `omp -p`는 `hasUI=false`; 기본 정책(`headlessEffects: allow`)에서 `bash`가 실행되고 `has_ui:0`으로 저널됨.
 - 종료 시 `writer.released`, lease `expires=0`. 이후 같은 세션 ID를 다른 프로세스가 acquire 가능(테스트).
 - `turn_start`는 18.1.10에서 모델 호출마다 발화한다(프롬프트 1개, 도구 2개 → `turns` 3~4 = `before_agent_start` 1 + 모델 호출당 `turn_start` 1). 발화하지 않는 호스트에서도 `before_agent_start`가 turn을 올리므로 회상 게이트는 프롬프트 단위로 degrade할 뿐 영구 차단되지 않는다.
-- clab-mem 새 쓰기 경로(키별 lock + sha 검증 커밋 + 서명 receipt)가 실제 Utopia에서 동작한다. 같은 `idempotency_key` 재발행은 절을 붙이지 않고 `duplicate`를 돌려준다.
+- 정본 메모리는 verbs 표면(`recall`/`entity`/`context_pack`/`delta`/`synthesize`/`remember`/`forget`)만 노출한다. 쓰기에 서버가 강제하는 멱등 키가 없으므로 오류는 `unknown`으로만 닫힌다.
 
 ## 테스트가 방어하는 불변식
 
@@ -38,20 +35,17 @@
 
 **정책/근거**: 미지 도구·오도하는 MCP 이름 = 효과, 정확 allowlist만 read, headless 기본 허용/`deny` 옵션, `requireApproval` UI 필요, clab target fingerprint/headless/고위험, 모델 공급 descriptor 거절, approval hash 결합(입력·세션·epoch), evidence hash·traversal·symlink·secret·범위, zvec = read(입력 무수정·`revisions` 0·`search.*` 이벤트 없음·toolCalls +1/effects +0), zvec 실패·lapse = `failed`(unknown·poison 아님, 다음 효과 허용), workspace-write 분류(literal/edit path/정책·자격증명·device·shebang·dangling symlink), 민감 read 이벤트(차단 없음).
 
-**확장(mock)**: 로드·도구 5개·`session_stop` 미등록·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·recall·memory·discovery·`search.semanticDiscovery`=zvec), evidence→checkpoint→candidate 체인(publish 명령 없음, 후보는 `candidate`), `runtime_reconcile`은 session-write라 workspace unknown·recall gate가 막지 못함(tool_call 경유 회귀), attestation(`by: session`, `observed` 저널), `agent_end` 알림만, 재attach·compaction 뒤 resume card 1회(저널 사실), pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
+**확장(mock)**: 로드·도구 4개·`session_stop` 미등록·명령·저널 사이클·compat report `ok`·before_agent_start 상태(사용량·recall·memory·discovery·`search.semanticDiscovery`=zvec), evidence→checkpoint 체인(정본 메모리에 쓰는 런타임 도구 없음, publish 명령 없음), `runtime_reconcile`은 session-write라 workspace unknown·recall gate가 막지 못함(tool_call 경유 회귀), attestation(`by: session`, `observed` 저널), `agent_end` 알림만, 재attach·compaction 뒤 resume card 1회(저널 사실), pause/resume/reconcile all, 멤버 누락 시 disabled(비REQUIRED)·차단(REQUIRED)·report `degraded`, runtime config 반영과 잘못된 config fail closed, shutdown 후 재acquire.
 
-**회상**: 같은 turn의 회상 intent·settle은 효과를 통과시키지 않음(`settledTurn < intent.turn`), 읽기는 대기 없음, 실패한 회상도 settle, `mem_status`/`mem_read`는 회상 아님, 10회 거절해도 상태 불변(횟수 해제 없음), goal 변경 시 재요구, epoch 재개 + task 알려짐 → 그 키의 `mem_task_read`만, `advise`는 차단 없음, `hits>0` 뒤 읽기 없음 → `recall.shallow`, discovery: zvec 전 distinct read 수·`freshness:` 관측·`search.scope` 이벤트(입력 무수정).
+**회상**: 같은 turn의 회상 intent·settle은 효과를 통과시키지 않음(`settledTurn < intent.turn`), 읽기는 대기 없음, 실패한 회상도 settle, `recall.tools` 밖의 메모리 read(`synthesize`)는 회상 아님, 10회 거절해도 상태 불변(횟수 해제 없음), goal 변경 시 재요구, 새 epoch는 이전 settle을 물려받지 않음, 디스패치된 회상(`xd://`)은 게이트를 만족시키고 봉투는 효과가 아님, 운영자 해제는 goal 하나·`recall.override` 저널·모델은 호출 불가, `advise`는 차단 없음, 조망 회상 뒤 아무 것도 읽지 않으면 `recall.shallow`, discovery: zvec 전 distinct read 수·`freshness:` 관측·`search.scope` 이벤트(입력 무수정).
 
-**메모리**: receipt 파싱 엄격(중복 토큰·미지 outcome·sig 없음 거절), 서명 검증(다른 키·변조 거절), publish 성공만으로 `submitted`(정본 아님), 무서명·타키·타payload receipt는 telemetry, 검증된 receipt로만 `published`, publish 입력≠후보 → `MEMORY_CANDIDATE_MISMATCH`(hash·idem·content·evidence·rejected), stale evidence는 publish·인용 note 모두 전송 전 거절, 인용 없는 note 허용+`memory.unverified`, publish 오류 → outbox·action `unknown`이되 workspace 효과는 비차단, 직전 실패 뒤 쓰기 → `MEMORY_BACKEND_DEGRADED`(status 성공으로 해제), 다른 idem 쓰기 → `RECONCILIATION_REQUIRED`, 같은 idem 재발행 허용, receipt 없는 2xx는 해소 아님, 자기 intent에 묶인 `committed`만 이전 행 `reconciled(by: receipt)`, `not_sent`는 서명+바인딩(key·idem 정확 일치)일 때만 `failed`(타키·타intent·idem 없음은 `unknown`), revise로 입력이 바뀐 쓰기는 성공해도 `unknown`(실행된 intent의 receipt로만 해소), payload가 바뀐 publish는 receipt가 있어도 `unknown`, task key 미확인 쓰기 → `MEMORY_TASK_NOT_STARTED`(실패한 read는 증명 아님, start는 예외), 자격증명 → `MEMORY_SECRET`, 투기적 kind 거절, `memoryTask`·`effectsSinceNote`는 저널에서 유도되어 재시작 뒤 동일(`rowid` 경계), v2 저널 마이그레이션.
-
-**clab-mem 커밋 규약**(`mcp/commit.test.ts`): 마커 있으면 밀지 않음, 덮어쓰기 감지 후 재적용(두 절 보존), 위에 쌓인 경우 재적용 없음, `ready` 대기 후 바탕, 정확 캐시는 청크 미조회, 상한 초과는 실패(조용한 성공 없음), SQLite 쓰기 lock 직렬화(같은 프로세스 큐, 자식 프로세스가 쥔 lock 대기·해제).
+**메모리**: 자격증명 패턴은 전송 전 거절(`MEMORY_SECRET`, 저널에 executing 행 없음), 인용한 근거의 파일이 바뀌면 거절(`STALE_EVIDENCE`)·안 바뀌면 통과, 인용 없는 쓰기는 허용+`memory.unverified`, 직전 메모리 호출이 실패면 다음 쓰기 대기(`MEMORY_BACKEND_DEGRADED`), 오류난 쓰기는 `unknown`(읽기 성공만으로 해소되지 않음, attestation 필요), 입력이 게이트 통과 후 바뀐 쓰기는 성공해도 `unknown`(`memory.write_revised`+`memory.write_unknown`), 메모리 unknown은 메모리 쓰기만 막고 workspace 효과는 계속(`blockedUntilReconciled` false), 후보 큐 테이블이 있는 저널은 v4로 전진하며 `actions` 보존, 미지 스키마는 열지 않음.
 
 ## 수행하지 않은 검사
 
 - 인터랙티브 TUI에서 `/runtime` 명령과 승인 대화상자 실행(print 모드와 mock으로만 검증).
 - `session_switch`(`/resume`, `/new`)·`session_compact`·`agent_end` 경로의 라이브 발화(mock으로만; `turn_start`는 라이브 확인).
-- 회상 게이트·메모리 게이트·`mem_publish`의 라이브 세션 실행(단위 테스트·demo·서버 라이브 note로 각 조각은 확인했으나 한 세션에서 이어 돌리지는 않았다. 이 세션의 OMP는 이전 확장·이전 MCP 서버를 로드한 상태였다).
-- 두 기계에서 같은 기록에 동시에 쓰는 실제 경쟁(가짜 서버로만). 같은 기계의 두 프로세스 경쟁은 lock 테스트로만.
+- 새 도구 이름(`mcp__gbrain_*`)으로 회상·메모리 게이트를 라이브 세션에서 이어 돌린 실행(단위 테스트·demo·라이브 MCP 왕복으로 각 조각은 확인했다. 이 세션의 OMP는 교체 이전 확장을 로드한 상태였다).
 - 다른 OMP 버전. `compat/tested-versions.json`에는 18.1.10만 있다.
 - 동일 workload A/B 성능 측정. 모델 기반 작업 품질에 대한 주장은 없다.
 - 두 프로세스가 같은 workspace에서 동시에 효과를 실행하는 실제 경쟁(단위 테스트의 시계 기반 시뮬레이션만).

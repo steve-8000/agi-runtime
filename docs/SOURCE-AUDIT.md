@@ -20,17 +20,15 @@
 
 `omp -p … -e extension/index.ts`(OMP_RUNTIME_REQUIRED=1)에서 모델이 `write({path:"xd://runtime_status"})`를 호출했다. 관측: `intents 4 / starts 3 / results 4 / ends 3`. 중첩 디스패치는 외부와 **같은 toolCallId**, 다른 toolName, 자체 `tool_execution_start/end` 없음. 초기 구현(toolCallId 키)은 외부 `write` 행을 `executing`으로 남겼다. 키를 `(toolCallId, toolName)`으로 바꾸고 `tests/kernel.test.mjs`에 회귀를 남겼다. 수정 후 재실행: 네 행 모두 `succeeded`.
 
-## clab-mem (정본 메모리)
+## gbrain (정본 메모리)
 
-`~/.omp/agent/mcp.json`: 서버 `clab-mem` = `bun run <clab-mem checkout>/mcp/server.ts`. OMP는 MCP 도구를 `mcp__<server>_<tool>`로 노출하며 이 세션의 라우트 목록이 `mcp__clab_mem_mem_read` 등을 그대로 보인다.
+`~/.omp/agent/mcp.json`: 서버 `gbrain` = `https://gbrain.clab.one/mcp`(Streamable HTTP, bearer는 0600 파일에서 읽는 헤더 명령). OMP는 MCP 도구를 `mcp__<server>_<tool>`로 노출하므로 라우트는 `mcp__gbrain_*`다.
 
-`mcp/server.ts` 도구 정의: `mem_task_start`(key find-or-create; 기존 키에는 `재개` 절 append), `mem_task_note`(append, key 없으면 실패), `mem_task_complete`(read-back 검증), `mem_supersede`(배너 + `폐기` 절 append), `mem_task_read`, `mem_task_lookup`, `mem_search`, `mem_read`, `mem_status`, 그리고 이번에 추가한 `mem_publish`. 읽기 다섯 개가 `memoryReadTools`, 쓰기 네 개가 `memoryWriteTools`, `mem_publish`가 `memoryPublishTool`이다. **쓰기 네 개 전부 문서 RMW append**다 — `start`도 `supersede`도 멱등이 아니다.
+서버가 노출하는 표면은 메모리 verb 7개다: `recall`, `entity`, `context_pack`, `delta`, `synthesize`(읽기), `remember`, `forget`(쓰기). `remember`는 사실 하나에 `provenance`를 필수로 받고 `{id, status}`(`inserted|duplicate|superseded`)를 돌려준다. 중복 판정은 임베딩 유사도이고 **서버가 강제하는 멱등 키는 없다** — 같은 사실을 다른 문구로 다시 쓰면 두 번 들어갈 수 있다. 그래서 이 런타임은 결과 본문으로 저널 상태를 바꾸지 않고, 오류를 `unknown`으로 두고 read-back attestation만 해소로 인정한다.
 
-이번 변경(clab-mem `mcp/commit.ts`, `mcp/receipt.ts`, `mcp/server.ts`): Utopia ingest에 조건부 갱신이 없고(`references/utopia-api.md`: `{filename, content, external_id, doc_time}`뿐) 청크는 비동기이며 로컬 캐시는 기계 단위 파일이다. 그래서 (1) 쓰기마다 `idempotency_key` 필수, 절에 `<!-- idem: … -->` 마커, 바탕에 마커가 있으면 `duplicate`; (2) `~/.clab-mem/locks/write-lock.sqlite`의 `BEGIN IMMEDIATE`로 같은 기계 직렬화(커널이 프로세스 사망 시 해제; 파일 lock 토큰 방식은 해제 TOCTOU 때문에 폐기); (3) 바탕은 캐시 sha == 문서 행 sha일 때만 캐시, 아니면 `ready` 대기 후 청크 복원을 `render(parse(·))`로 정규화해 그 sha가 행 sha와 같을 때만(실측 80건 중 79건; 어긋나면 쓰지 않고 오류); (4) 민 뒤 행 sha 재확인, 덮어쓰였으면 마커 확인 후 재적용(최대 4회, 실패는 오류); (5) 결과 첫 줄에 Ed25519 서명 receipt(`~/.clab-mem/receipt-signing.key`, `bun mcp/receipt.ts`로 생성). curl exit 6/7/35에만 `outcome=not_sent`, 그것도 push가 하나도 돌아오지 않은 커밋에만(typed `NotSentError`). `mem_publish`는 기존 문서가 이 후보의 마커·payload hash를 갖지 않으면 duplicate 판정 전에 거부.
+`forget(id)`는 멱등이며 만료 이력을 남긴다. `recall`은 질의로 코퍼스를 조망하고 `entity`/`context_pack`은 아는 대상을 답한다 — 게이트가 이 구분을 쓴다(조망만 하고 아무 것도 읽지 않으면 `recall.shallow`).
 
-`skill://clab-mem`: append-only, `mem_task_complete`는 2xx를 성공 근거로 삼지 않음, 임베딩 지연이 파이프라인을 멈출 수 있음(실측). `references/transport.md`: 이 맥에서 bun/node/python은 `mem.clab.one`에 TCP 연결 불가, 전송은 `/usr/bin/curl` — 런타임이 전송을 소유할 수 없는 결정적 이유. 스킬 문서(`~/.omp/agent/skills/clab-mem/SKILL.md`)는 아직 `idempotency_key`·`mem_publish`·receipt를 모른다 — 이 저장소는 `~/.omp/agent/*`를 수정하지 않으므로 운영자 갱신 항목이다.
-
-이 세션에서 `mem_search`·`mem_task_lookup`은 정상 응답했다(`hits=10 embedding=Qwen3-Embedding-0.6B-8bit`, `docs=1085`). 이 저장소에 대한 기록은 0건이었고, 작업 기록 `agi-runtime-autonomy-cutover`를 시작했다.
+읽기·쓰기 목록은 config에서 정확한 이름으로만 분류한다. 한 이름이 두 목록에 동시에 있으면 attach가 거절된다(`INVALID_TOOL_ALLOWLIST`): 두 부류의 게이트가 다르기 때문이다.
 
 ## zvec-grep
 

@@ -28,31 +28,32 @@
       "mode": "enforce",
       "headlessEffects": "allow",
       "blockOnUnknown": true,
-      "recall": "advise"
+      "recall": "require"
     },
     {
-      "name": "memory-receipts",
-      "status": "verifiable",
-      "writeTools": 4,
-      "publishTool": "mcp__clab_mem_mem_publish"
+      "name": "memory-tools",
+      "status": "valid",
+      "readTools": 5,
+      "writeTools": 2,
+      "recall": "require"
     },
     {
       "name": "compat-report",
       "status": "ok",
-      "at": "2026-09-05T20:10:56.654Z",
+      "at": "2026-09-05T21:49:21.113Z",
       "contract": 3,
       "missing": [],
       "counters": {
-        "intents": 0,
-        "starts": 0,
-        "results": 0,
-        "ends": 0,
+        "intents": 2,
+        "starts": 2,
+        "results": 2,
+        "ends": 2,
         "unmatchedStarts": 0,
         "unmatchedResults": 0,
         "revisions": 0,
         "rewrites": 0,
         "blocks": 0,
-        "turns": 0
+        "turns": 3
       },
       "attachError": null
     }

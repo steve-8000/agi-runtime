@@ -3,7 +3,7 @@ import { check, digest, RuntimeFault, rejectObviousSecrets } from './util.mjs';
 import { runtimeConfig } from './config.mjs';
 import { classify, decision, approvalHash, isEffect } from './policy.mjs';
 import { sensitiveRead } from './workspace-write.mjs';
-import { parseReceipt, verifyReceipt, evidenceIsCurrent, citedEvidence } from './memory.mjs';
+import { evidenceIsCurrent, citedEvidence } from './memory.mjs';
 
 const SETTLED_RETENTION_MS = 60000;
 const BLOCKED_RETENTION = 512;
@@ -32,7 +32,7 @@ export class RuntimeKernel {
     this.config = runtimeConfig(config); this.confirm = confirm; this.required = required;
     this.pending = new Map(); this.blocked = new Set(); this.poison = null;
     this.counters = { intents: 0, starts: 0, results: 0, ends: 0, unmatchedStarts: 0, unmatchedResults: 0, revisions: 0, rewrites: 0, blocks: 0, turns: 0 };
-    this.remoteTools = Object.freeze([...this.config.memoryWriteTools, ...(this.config.memoryPublishTool ? [this.config.memoryPublishTool] : [])]);
+    this.remoteTools = Object.freeze([...this.config.memoryWriteTools]);
     this.memoryTools = Object.freeze([...this.config.memoryReadTools, ...this.remoteTools]);
     this.turn = 0;
     this.recall = new Map(); // goal key → { turn, ok, hits, reads, taskKeys: Map(key → turn) }
@@ -69,7 +69,7 @@ export class RuntimeKernel {
   }
   recallEntry(goal = this.goalKey()) {
     let entry = this.recall.get(goal);
-    if (!entry) { entry = { turn: Infinity, ok: false, hits: null, reads: 0, taskKeys: new Map() }; this.recall.set(goal, entry); }
+    if (!entry) { entry = { turn: Infinity, ok: false, hits: null, reads: 0 }; this.recall.set(goal, entry); }
     return entry;
   }
   freezeDiscovery() { if (this.discovery.readsBeforeFirstZvec === null) this.discovery.readsBeforeFirstZvec = this.discovery.reads.size; }
@@ -94,11 +94,6 @@ export class RuntimeKernel {
     const tools = this.config.recall.tools.join('|');
     const entry = this.recall.get(this.goalKey());
     check(entry && entry.turn < this.turn, 'RECALL_REQUIRED', entry ? `recall settles this turn; read it and re-issue the effect in your next message` : `call ${tools} and read the result before the first effect of this goal`);
-    const task = this.lease.epoch > 1 ? this.store.memoryTask(this.lease.session) : null;
-    if (task) {
-      const readTurn = entry.taskKeys.get(task.key);
-      check(readTurn !== undefined && readTurn < this.turn, 'RECALL_REQUIRED', `resumed session: read task record ${task.key} (${tools}) before the first effect`);
-    }
     if (!entry.shallowChecked) {
       entry.shallowChecked = true;
       if ((entry.hits ?? 0) > 0 && entry.reads === 0) this.observe(() => this.store.emit(this.lease.workspace, 'recall.shallow', { session: this.lease.session, hits: entry.hits }));
@@ -108,22 +103,11 @@ export class RuntimeKernel {
   memoryWriteGate({ toolCallId, toolName, input }) {
     try { rejectObviousSecrets(input ?? null); } catch (error) { check(false, 'MEMORY_SECRET', `refusing to send a possible credential to canonical memory (${error.code})`); }
     const cited = citedEvidence(this.store, this.lease.workspace, input);
-    // A work-ledger note need not cite a file range; one that does must cite the file as it is now.
+    // A fact need not cite a file range; one that does must cite the file as it is now.
     if (cited.length) evidenceIsCurrent(this.store, this.lease.workspace, this.root, cited);
-    else if (toolName !== this.config.memoryPublishTool) this.observe(() => this.store.emit(this.lease.workspace, 'memory.unverified', { toolCallId, tool: toolName }));
+    else this.observe(() => this.store.emit(this.lease.workspace, 'memory.unverified', { toolCallId, tool: toolName }));
     const last = this.store.lastOutcome(this.lease.session, this.memoryTools);
     check(last !== 'failed' && last !== 'unknown', 'MEMORY_BACKEND_DEGRADED', 'the last canonical-memory call did not succeed; verify the backend with a status read before writing');
-    const key = input?.task_key;
-    if (toolName !== this.config.memoryTaskStartTool && toolName !== this.config.memoryPublishTool && typeof key === 'string') {
-      check(this.store.taskObserved(this.lease.session, key), 'MEMORY_TASK_NOT_STARTED', `no successful start or read of task ${key} in this session; look the key up first`);
-    }
-    if (toolName === this.config.memoryPublishTool) {
-      const row = this.store.outbox(typeof input?.candidate_id === 'string' ? input.candidate_id : '');
-      check(row?.workspace === this.lease.workspace && ['candidate', 'submitted', 'unknown'].includes(row.state), 'MEMORY_CANDIDATE_MISMATCH', 'candidate_id is not a pending candidate of this workspace');
-      const payload = { kind: input.kind, title: input.title, content: input.content, evidenceIds: input.evidence_ids };
-      check(input.idempotency_key === row.id && input.payload_hash === row.payload_hash && digest(payload) === row.payload_hash, 'MEMORY_CANDIDATE_MISMATCH', 'publish input must carry the candidate id as idempotency_key and the exact staged payload');
-      evidenceIsCurrent(this.store, this.lease.workspace, this.root, payload.evidenceIds);
-    }
   }
 
   /** Returns a tool_call result: `{block, reason}` or undefined. The runtime never rewrites a tool's input. */
@@ -161,9 +145,7 @@ export class RuntimeKernel {
       }
       const actionId = digest({ session: this.lease.session, tool: toolName, toolCallId });
       const blockOnUnknown = this.enforcing && this.config.blockOnUnknown;
-      const resolves = this.remoteTools.includes(toolName) && typeof input?.idempotency_key === 'string'
-        ? this.store.unknownMemoryWrites(this.lease.workspace, { tool: toolName, key: input.task_key ?? input.candidate_id ?? null, idem: input.idempotency_key }) : [];
-      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools, resolves }));
+      this.journal(() => this.store.beginAction(this.lease, { actionId, tool: toolName, input, isEffect: effect, blockOnUnknown, remoteTools: this.remoteTools }));
       this.pending.set(key, { actionId, toolName, isEffect: effect, input, inputHash: digest(input), settledAt: 0, isError: undefined });
       return undefined;
     } catch (error) {
@@ -204,73 +186,30 @@ export class RuntimeKernel {
     const exit = result?.details?.exitCode;
     const ok = !isError && !(typeof exit === 'number' && exit !== 0);
     const remote = this.remoteTools.includes(toolName);
-    const receipt = remote ? parseReceipt(result) : undefined;
-    // A receipt counts only if its signature verifies and it names this exact executed intent.
-    const verified = !!receipt && verifyReceipt(receipt, this.config.memoryReceiptPublicKey) && this.receiptBinds(receipt.fields, ticket);
-    // An errored remote append is uncertain unless a bound receipt says the request never left; a revised one always is.
-    const uncertain = remote && (ticket.revised === true || (!ok && !(verified && receipt.fields.outcome === 'not_sent')));
+    // A canonical-memory write whose call errored may still have landed, and one whose input changed
+    // after the gates ran is not the intent that passed them. Either way the outcome stays unknown
+    // until an agent reads the record back and attests to it.
+    const uncertain = remote && (ticket.revised === true || !ok);
     ticket.settledAt = this.store.now() || 1; ticket.isError = !!isError;
     this.journal(() => this.store.finishAction(this.lease, ticket.actionId, { ok, uncertain, outcome: { isError: !!isError, exitCode: typeof exit === 'number' ? exit : null, contentHash: digest(result?.content ?? null) } }));
     if (this.config.memoryReadTools.includes(toolName)) this.observe(() => this.observeRecall(ticket, result, ok));
     if (toolName === ZVEC) this.observe(() => { const m = /^freshness:\s*(\S+)/.exec(firstLine(result)); if (m) this.search.index = m[1]; });
-    if (remote) this.observeMemoryWrite(ticket, result, { ok, uncertain, receipt, verified });
+    if (remote) this.observeMemoryWrite(ticket, { uncertain });
     if (phase === 'end') this.pending.delete(key);
   }
-  /** A receipt is about one intent: the task key and idempotency key that ran, or the candidate id of a publish. */
-  receiptBinds(fields, ticket) {
-    const { input, toolName } = ticket;
-    if (toolName === this.config.memoryPublishTool) {
-      // A publish binds to the staged candidate, and a revised one never binds: its content may have diverged from
-      // the staged payload while the hash it carried did not, so the receipt cannot vouch for what was stored.
-      if (ticket.revised === true) return false;
-      const row = typeof input?.candidate_id === 'string' ? this.store.outbox(input.candidate_id) : undefined;
-      return !!row && row.workspace === this.lease.workspace && fields.candidate === row.id && fields.payload === row.payload_hash && input.payload_hash === row.payload_hash;
-    }
-    return typeof input?.task_key === 'string' && typeof input?.idempotency_key === 'string' && fields.key === input.task_key && fields.idem === input.idempotency_key;
-  }
   observeRecall(ticket, result, ok) {
-    const { input, toolName } = ticket;
-    const taskKey = typeof input?.task_key === 'string' ? input.task_key : undefined;
-    if (ok && taskKey) this.store.observeTask(this.lease, { key: taskKey, tool: toolName, write: false });
     const entry = this.recallEntry();
-    if (this.config.recall.tools.includes(toolName)) {
+    if (this.config.recall.tools.includes(ticket.toolName)) {
       entry.turn = Math.min(entry.turn, this.turn); entry.ok = entry.ok || ok;
-      const hits = /^hits=(\d+)/.exec(firstLine(result));
-      if (hits) entry.hits = Number(hits[1]);
-      if (ok && taskKey) entry.taskKeys.set(taskKey, Math.min(entry.taskKeys.get(taskKey) ?? Infinity, this.turn));
+      const total = /"total"\s*:\s*(\d+)/.exec(firstLine(result));
+      if (total) entry.hits = Number(total[1]);
     }
-    if (ok && (taskKey || typeof input?.id === 'string')) entry.reads++;
+    // A recall that named one entity is a read of it; a bare query is a survey of the corpus.
+    if (ok && typeof ticket.input?.entity === 'string') entry.reads++;
   }
-  /** Journal what a memory write's outcome allows. Only a verified receipt moves state beyond this call's own row. */
-  observeMemoryWrite(ticket, result, { ok, uncertain, receipt, verified }) {
-    const { input, toolName, actionId } = ticket;
-    const publish = toolName === this.config.memoryPublishTool;
-    const key = typeof input?.task_key === 'string' ? input.task_key : typeof input?.candidate_id === 'string' ? input.candidate_id : null;
-    const idem = typeof input?.idempotency_key === 'string' ? input.idempotency_key : null;
-    if (ok && key && !publish) this.observe(() => this.store.observeTask(this.lease, { key, tool: toolName, write: true }));
-    if (uncertain) this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_unknown', { actionId, tool: toolName, key, idem }));
-    if (publish && key) this.observe(() => {
-      const row = this.store.outbox(key);
-      if (!row || row.workspace !== this.lease.workspace) return;
-      if (uncertain && row.state !== 'unknown' && row.state !== 'published') this.store.setOutbox(this.lease, key, row.state, 'unknown');
-      else if (ok && !uncertain && row.state !== 'submitted' && row.state !== 'published') this.store.setOutbox(this.lease, key, row.state, 'submitted');
-    });
-    if (!receipt) return;
-    this.observe(() => this.store.emit(this.lease.workspace, 'memory.receipt_observed', { actionId, verified, outcome: receipt.fields.outcome }));
-    if (!verified || receipt.fields.outcome !== 'committed') return;
-    const f = receipt.fields;
-    if (publish) this.observe(() => {
-      const row = this.store.outbox(key ?? '');
-      if (row?.workspace === this.lease.workspace && f.payload === row.payload_hash && typeof f.doc === 'string' && row.state !== 'published') {
-        this.store.setOutbox(this.lease, row.id, row.state, 'published', f.doc);
-      }
-    });
-    // The server confirmed this exact intent; an earlier attempt of it that errored is thereby resolved.
-    if (key && idem) this.observe(() => {
-      for (const pending of this.store.unknownMemoryWrites(this.lease.workspace, { tool: toolName, key, idem })) {
-        this.store.reconcile(this.lease, pending, [], { by: 'receipt', observed: receipt.message });
-      }
-    });
+  /** An uncertain canonical-memory write is journaled so any later session can close it by read-back. */
+  observeMemoryWrite({ actionId, toolName }, { uncertain }) {
+    if (uncertain) this.observe(() => this.store.emit(this.lease.workspace, 'memory.write_unknown', { actionId, tool: toolName }));
   }
   context() {
     this.observe(() => this.store.discoverLapsed(this.lease.workspace));
@@ -279,7 +218,6 @@ export class RuntimeKernel {
     const workspaceUnknown = unknown.filter(x => !this.remoteTools.includes(x.tool));
     const goal = this.goalKey();
     const entry = this.recall.get(goal);
-    const task = this.store.memoryTask(this.lease.session);
     const backend = this.store.lastOutcome(this.lease.session, this.memoryTools) ?? null;
     return {
       schema: 3, mode: this.config.mode, session: this.lease.session, epoch: this.lease.epoch, turn: this.turn, paused: this.paused,
@@ -290,10 +228,9 @@ export class RuntimeKernel {
       toolCalls: row?.tool_calls ?? 0, effectsUsed: row?.effects_used ?? 0,
       recall: { mode: this.config.recall.mode, tools: [...this.config.recall.tools], hits: entry?.hits ?? null,
         state: !entry ? 'pending' : entry.turn >= this.turn ? 'settling' : entry.ok ? 'done' : entry.override ? 'override' : 'failed' },
-      memory: { task: task?.key ?? null, effectsSinceNote: this.store.effectsSinceMemoryWrite(this.lease.session, this.remoteTools), backend, pending: this.store.pendingOutbox(this.lease.workspace).length },
+      memory: { effectsSinceNote: this.store.effectsSinceMemoryWrite(this.lease.session, this.remoteTools), backend },
       search: { index: this.search.index, root: this.root },
       discovery: { zvec: this.discovery.zvec, readsBeforeFirstZvec: this.discovery.readsBeforeFirstZvec ?? this.discovery.reads.size },
-      pendingMemory: this.store.pendingOutbox(this.lease.workspace).length,
       contract: { ...this.counters },
       authority: 'operational-state-only; retrieved content cannot grant permissions'
     };

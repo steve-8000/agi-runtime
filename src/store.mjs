@@ -3,15 +3,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { openDatabase } from './sqlite.mjs';
 import { check, digest, id, stable, boundedText, rejectObviousSecrets } from './util.mjs';
 
-const MEMORY_KINDS = ['decision', 'constraint', 'incident', 'procedure', 'checkpoint'];
-// The model is the transport: a candidate is `submitted` when its publish call returned without
-// error and `published` only once a receipt this runtime could verify names it. `unknown` is an
-// errored or interrupted publish; the server's identity-keyed upsert makes re-issuing safe.
-const OUTBOX_TRANSITIONS = {
-  candidate: ['submitted', 'unknown', 'rejected'], submitted: ['published', 'unknown', 'rejected'],
-  unknown: ['submitted', 'published', 'rejected']
-};
-const OUTBOX_STATES = "('candidate','submitted','published','unknown','rejected')";
 const placeholders = list => list.map(() => '?').join(',');
 
 /**
@@ -38,26 +29,14 @@ export class RuntimeStore {
     this.db = db; this.now = now;
     db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
     const version = db.prepare('PRAGMA user_version').get().user_version;
-    check(version === 0 || version === 2 || version === 3, 'UNSUPPORTED_SCHEMA');
-    if (version === 2) {
-      // v2 outbox states described a runtime-owned transport (approved/sending/acked). SQLite cannot
-      // alter a CHECK, so the table is rebuilt; an in-flight `sending` row is what an interrupted
-      // publish looks like now, and `acked` rows were verified receipts.
-      // One statement per call: bun:sqlite's multi-statement exec swallows a constraint failure and runs on,
-      // which would DROP the old table and COMMIT an empty one. Prepared statements throw in both engines.
+    check([0, 2, 3, 4].includes(version), 'UNSUPPORTED_SCHEMA');
+    if (version === 2 || version === 3) {
+      // The candidate outbox staged promotions for a publish call that canonical memory no longer has:
+      // a fact is written by the memory tool itself, and an uncertain write is closed by read-back.
+      // One statement per call: bun:sqlite's multi-statement exec swallows a failure and runs on.
       db.exec('BEGIN IMMEDIATE');
       try {
-        for (const statement of [
-          `CREATE TABLE outbox_v3 (
-            id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
-            payload TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ${OUTBOX_STATES}),
-            remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
-          )`,
-          `INSERT INTO outbox_v3 SELECT id,workspace,session,payload,payload_hash,
-            CASE state WHEN 'approved' THEN 'candidate' WHEN 'sending' THEN 'unknown' WHEN 'acked' THEN 'published' ELSE state END,
-            remote_id,created,updated FROM outbox`,
-          'DROP TABLE outbox', 'ALTER TABLE outbox_v3 RENAME TO outbox', 'PRAGMA user_version=3'
-        ]) db.prepare(statement).run();
+        for (const statement of ['DROP TABLE IF EXISTS outbox', 'DROP TABLE IF EXISTS outbox_v3', 'PRAGMA user_version=4']) db.prepare(statement).run();
         db.exec('COMMIT');
       } catch (error) {
         try { db.exec('ROLLBACK'); } catch { /* the failed statement may already have ended the transaction */ }
@@ -88,12 +67,6 @@ export class RuntimeStore {
         id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id),
         record TEXT NOT NULL, created INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS outbox (
-        id TEXT PRIMARY KEY, workspace TEXT NOT NULL REFERENCES workspaces(id), session TEXT NOT NULL,
-        payload TEXT NOT NULL, payload_hash TEXT NOT NULL,
-        state TEXT NOT NULL CHECK(state IN ${OUTBOX_STATES}),
-        remote_id TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
-      );
       CREATE TABLE IF NOT EXISTS approvals (
         id TEXT PRIMARY KEY, workspace TEXT NOT NULL, session TEXT NOT NULL, epoch INTEGER NOT NULL,
         action_hash TEXT NOT NULL, expires INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0
@@ -101,7 +74,7 @@ export class RuntimeStore {
       CREATE INDEX IF NOT EXISTS pending_actions ON actions(workspace,state);
       CREATE INDEX IF NOT EXISTS session_actions ON actions(session,state);
       CREATE INDEX IF NOT EXISTS workspace_events ON events(workspace,kind,seq);
-      PRAGMA user_version=3;
+      PRAGMA user_version=4;
     `);
   }
   transaction(fn) {
@@ -206,7 +179,7 @@ export class RuntimeStore {
    * by either kind (re-issuing it could duplicate an append the server already committed).
    * Usage counters (tool_calls, effects_used) are observation only; nothing here caps them.
    */
-  beginAction(lease, { actionId, tool, input, isEffect = true, blockOnUnknown = false, remoteTools = [], resolves = [] }) {
+  beginAction(lease, { actionId, tool, input, isEffect = true, blockOnUnknown = false, remoteTools = [] }) {
     // The sweep commits on its own: a refused intent must not roll back the discovery of lapsed work.
     if (isEffect) this.transaction(() => this.sweep(lease.workspace));
     return this.transaction(() => {
@@ -215,8 +188,7 @@ export class RuntimeStore {
       check(!this.db.prepare('SELECT 1 FROM actions WHERE id=?').get(actionId), 'DUPLICATE_ACTION');
       if (isEffect && blockOnUnknown) {
         const remote = remoteTools.includes(tool);
-        // `resolves`: uncertain rows this call re-issues with the same idempotency key; the server dedupes, a receipt resolves them.
-        const blocking = this.unknownActions(lease.workspace).filter(x => !resolves.includes(x.id) && (remote || !remoteTools.includes(x.tool)));
+        const blocking = this.unknownActions(lease.workspace).filter(x => remote || !remoteTools.includes(x.tool));
         check(blocking.length === 0, 'RECONCILIATION_REQUIRED', `uncertain: ${blocking.map(x => `${x.id.slice(0, 12)} ${x.tool}`).join(', ')}; read back the real state, then runtime_reconcile (a memory write may be re-issued with its own idempotency_key)`);
       }
       this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(isEffect ? 1 : 0, this.now(), lease.session);
@@ -294,33 +266,10 @@ export class RuntimeStore {
     return this.db.prepare(`SELECT COUNT(*) AS n FROM actions WHERE session=? AND is_effect=1 AND state<>'executing' ${exclude} AND rowid>?`)
       .get(session, ...tools, since).n;
   }
-  /** A memory tool settled without error naming this task key. Reads count: the key is then known to exist. */
-  observeTask(lease, { key, tool, write }) {
-    boundedText(key, 200);
-    this.transaction(() => {
-      this.assertLease(lease);
-      this.emit(lease.workspace, 'memory.task_observed', { session: lease.session, key, tool, write: !!write });
-    });
-  }
-  taskObserved(session, key) {
-    return !!this.db.prepare("SELECT 1 FROM events WHERE kind='memory.task_observed' AND json_extract(payload,'$.session')=? AND json_extract(payload,'$.key')=? LIMIT 1").get(session, key);
-  }
-  /** Uncertain memory writes of one exact intent (tool, task key, idempotency key); a verified receipt for that intent resolves them. */
-  unknownMemoryWrites(workspace, { tool, key, idem }) {
-    return this.db.prepare(`SELECT a.id FROM events e JOIN actions a ON a.id=json_extract(e.payload,'$.actionId')
-      WHERE e.workspace=? AND e.kind='memory.write_unknown' AND a.state='unknown'
-        AND json_extract(e.payload,'$.tool')=? AND json_extract(e.payload,'$.key')=? AND json_extract(e.payload,'$.idem')=? ORDER BY e.seq`)
-      .all(workspace, tool, key, idem).map(row => row.id);
-  }
-  /** The tail of a session's journal, for a resume card: facts, not prose. */
+  /** The last few actions of this session, newest first: the resume card's factual half. */
   recentActions(session, limit = 8) {
     return this.db.prepare('SELECT id,tool,is_effect,state,updated FROM actions WHERE session=? ORDER BY created DESC, rowid DESC LIMIT ?').all(session, limit)
       .map(x => ({ id: x.id.slice(0, 12), tool: x.tool, effect: x.is_effect === 1, state: x.state, at: x.updated }));
-  }
-  /** The task record this session is writing to: the latest key it started, noted or completed. Derived, never stored. */
-  memoryTask(session) {
-    const row = this.db.prepare("SELECT payload,at FROM events WHERE kind='memory.task_observed' AND json_extract(payload,'$.session')=? AND json_extract(payload,'$.write')=1 ORDER BY seq DESC LIMIT 1").get(session);
-    return row ? { key: JSON.parse(row.payload).key, at: row.at } : null;
   }
   saveEvidence(lease, record) {
     return this.transaction(() => {
@@ -337,35 +286,6 @@ export class RuntimeStore {
   assertEvidence(workspace, evidenceIds) {
     check(Array.isArray(evidenceIds) && evidenceIds.length > 0, 'EVIDENCE_REQUIRED');
     for (const evidenceId of evidenceIds) check(this.evidence(evidenceId)?.workspace === workspace, 'EVIDENCE_SCOPE_MISMATCH');
-  }
-  candidate(lease, payload) {
-    rejectObviousSecrets(payload); boundedText(stable(payload), 16000);
-    check(MEMORY_KINDS.includes(payload.kind), 'INVALID_MEMORY_KIND');
-    boundedText(payload.title, 200); boundedText(payload.content, 10000);
-    return this.transaction(() => {
-      this.assertLease(lease); this.assertEvidence(lease.workspace, payload.evidenceIds);
-      const candidateId = id();
-      this.db.prepare('INSERT INTO outbox(id,workspace,session,payload,payload_hash,state,created,updated) VALUES(?,?,?,?,?,?,?,?)')
-        .run(candidateId, lease.workspace, lease.session, stable(payload), digest(payload), 'candidate', this.now(), this.now());
-      this.emit(lease.workspace, 'memory.candidate', { candidateId, payloadHash: digest(payload) });
-      return candidateId;
-    });
-  }
-  setOutbox(lease, candidateId, from, to, remoteId = null) {
-    check(OUTBOX_TRANSITIONS[from]?.includes(to), 'OUTBOX_TRANSITION_INVALID');
-    if (to === 'published') boundedText(remoteId, 1024);
-    this.transaction(() => {
-      this.assertLease(lease);
-      const row = this.outbox(candidateId);
-      check(row?.workspace === lease.workspace && row.state === from, 'OUTBOX_STATE_CONFLICT');
-      this.db.prepare('UPDATE outbox SET state=?,remote_id=?,session=?,updated=? WHERE id=?').run(to, to === 'published' ? remoteId : row.remote_id, lease.session, this.now(), candidateId);
-      this.emit(lease.workspace, `memory.${to}`, { candidateId, remoteId: to === 'published' ? remoteId : null });
-    });
-  }
-  outbox(candidateId) { return this.db.prepare('SELECT * FROM outbox WHERE id=?').get(candidateId); }
-  /** Candidates that are not yet verified canonical: staged, submitted without a verified receipt, or uncertain. */
-  pendingOutbox(workspace) {
-    return this.db.prepare("SELECT id,state,payload_hash,updated FROM outbox WHERE workspace=? AND state IN ('candidate','submitted','unknown') ORDER BY created").all(workspace);
   }
   approve(lease, actionHash, ttl = 60000) {
     check(Number.isSafeInteger(ttl) && ttl > 0 && ttl <= 300000, 'INVALID_APPROVAL_TTL');

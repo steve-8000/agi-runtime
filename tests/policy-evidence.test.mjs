@@ -28,7 +28,7 @@ test('invalid and unknown runtime configuration fails closed', () => {
 test('unknown tools and misleading MCP names are effects; only exact allowlisted names read', () => {
   assert.equal(classify(call({ toolName: 'mcp__production_get_and_delete' })).kind, 'opaque-exec');
   assert.equal(classify(call({ toolName: 'brand_new_tool_from_upgrade' })).kind, 'opaque-exec');
-  assert.equal(classify(call({ toolName: 'mcp__clab_mem_mem_search' }), { memoryReadTools: ['mcp__clab_mem_mem_search'] }).kind, 'read');
+  assert.equal(classify(call({ toolName: 'mcp__gbrain_recall' }), { memoryReadTools: ['mcp__gbrain_recall'] }).kind, 'read');
   assert.equal(isEffect(classify(call({ toolName: 'todo', input: {} }))), false);
   assert.equal(isEffect(classify(call({ toolName: 'task', input: {} }))), true);
 });
@@ -105,12 +105,12 @@ test('a failed or interrupted zvec search is a read failure, never uncertainty o
 });
 test('an xd:// dispatch is classified as the tool it dispatches, never as the envelope', async t => {
   const f = await fixture(t);
-  const cfg = { memoryReadTools: ['mcp__clab_mem_mem_search'] };
+  const cfg = { memoryReadTools: ['mcp__gbrain_recall'] };
   const dev = (tool, args) => classify(call({ toolName: 'write', input: { path: `xd://${tool}`, content: JSON.stringify(args) } }), cfg, f.root);
   assert.deepEqual(dev('mcp__zvec_grep_search', { root: f.root, query: 'q' }), { kind: 'read' });
-  assert.deepEqual(dev('mcp__clab_mem_mem_search', { query: 'q' }), { kind: 'read', source: 'canonical-memory' });
+  assert.deepEqual(dev('mcp__gbrain_recall', { query: 'q' }), { kind: 'read', source: 'canonical-memory' });
   assert.deepEqual(dev('ast_edit', { path: 'source.txt' }), { kind: 'workspace-write' });
-  assert.deepEqual(dev('mcp__clab_mem_mem_task_note', { task_key: 'k' }), { kind: 'opaque-exec' }, 'a dispatched write stays an effect');
+  assert.deepEqual(dev('mcp__gbrain_remember', { task_key: 'k' }), { kind: 'opaque-exec' }, 'a dispatched write stays an effect');
   assert.deepEqual(classify(call({ toolName: 'write', input: { path: `xd://mcp__zvec_grep_search`, content: 'not json' } }), cfg, f.root), { kind: 'read' }, 'malformed args still classify by target');
   assert.deepEqual(classify(call({ toolName: 'write', input: { path: 'new.txt', content: 'x' } }), cfg, f.root), { kind: 'workspace-write' }, 'a plain file write is untouched');
 });

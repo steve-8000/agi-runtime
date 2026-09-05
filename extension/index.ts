@@ -17,14 +17,13 @@ import type { Lease, ConfirmRequest, UncertainAction } from "./runtime-types.ts"
 //
 // Authority: the agent holds it. The runtime is observer, gatekeeper and ledger — it forces the
 // procedure (recall before the first effect, read-back before a retry, a verified receipt before a
-// candidate counts as canonical) and never starts a turn of its own. The only human approval left
+// uncertain write is closed by reading the record back) and never starts a turn of its own. The only human approval left
 // is Kubernetes outside clab-cluster, which kubernetes-approval.ts and the structured policy own.
 //
 // State lives in ~/.omp/runtime (journals, compat reports, operator config). Nothing is written
-// into the workspace, and nothing here is canonical memory - Utopia/clab-mem stays canonical.
+// into the workspace, and nothing here is canonical memory - gbrain holds that.
 
 const REQUIRED = process.env.OMP_RUNTIME_REQUIRED === "1";
-const KINDS = ["decision", "constraint", "incident", "procedure", "checkpoint"] as const;
 
 type Ctx = ExtensionContext;
 
@@ -109,7 +108,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 	pi.on("agent_end", (_event, ctx) => {
 		if (!kernel) return;
 		const c = kernel.context();
-		if (c.memory.effectsSinceNote > 0 && ctx.hasUI) ctx.ui.notify(`AGI Runtime: effects ${c.memory.effectsSinceNote} since the last memory note${c.memory.task ? ` under ${c.memory.task}` : " (no task record)"}`, "info");
+		if (c.memory.effectsSinceNote > 0 && ctx.hasUI) ctx.ui.notify(`AGI Runtime: ${c.memory.effectsSinceNote} effects since the last canonical-memory write`, "info");
 	});
 	pi.on("before_agent_start", () => {
 		if (!kernel) return;
@@ -122,12 +121,12 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 		// and the current source is authoritative over any index excerpt.
 		const state: Record<string, unknown> = { runtime: "agi-runtime", mode: c.mode, turn: c.turn, paused: c.paused,
 			uncertainActions: c.uncertainActions.length, blockedUntilReconciled: c.blockedUntilReconciled, uncertainRemote: c.uncertainRemote,
-			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint, pendingMemory: c.pendingMemory,
+			usage: { toolCalls: c.toolCalls, effects: c.effectsUsed }, checkpoint: c.checkpoint,
 			recall: c.recall, memory: c.memory, discovery: c.discovery,
 			search: { semanticDiscovery: "mcp__zvec_grep_search", exactAndExhaustive: "native grep/rg/lsp", authority: "current source, not index excerpts", root: c.search.root, index: c.search.index } };
 		if (resumeCard && store && lease) {
 			resumeCard = false;
-			state.resume = { epoch: c.epoch, nativeGoal: c.nativeGoal, task: c.memory.task, effectsSinceNote: c.memory.effectsSinceNote,
+			state.resume = { epoch: c.epoch, nativeGoal: c.nativeGoal, effectsSinceNote: c.memory.effectsSinceNote,
 				uncertain: (c.uncertainActions as UncertainAction[]).map(x => ({ id: x.id.slice(0, 12), tool: x.tool })), recent: store.recentActions(lease.session) };
 		}
 		return { message: { customType: "agi-runtime-state", content: JSON.stringify(state), display: false } };
@@ -169,13 +168,6 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 			requireKernel(); store!.assertEvidence(lease!.workspace, params.evidenceIds);
 			store!.checkpoint(lease!, params); return text({ saved: true });
 		} });
-	pi.registerTool({ name: "runtime_memory_candidate", label: "Memory Candidate", approval: "write",
-		description: "Stage a durable decision/constraint/incident/procedure/checkpoint for canonical memory, bound to evidence receipts. Nothing is sent here: publish it with the configured memory publish tool, passing candidateId as idempotency_key and the returned payloadHash with the exact same kind/title/content/evidence_ids. It becomes canonical only when a signed receipt verifies.",
-		parameters: z.object({ kind: z.enum(KINDS), title: z.string(), content: z.string(), evidenceIds: z.array(z.string()) }),
-		async execute(_id, params: { kind: string; title: string; content: string; evidenceIds: string[] }) {
-			const k = requireKernel(); const candidateId = store!.candidate(lease!, params);
-			return text({ candidateId, payloadHash: store!.outbox(candidateId).payload_hash, publishWith: k.config.memoryPublishTool || null, canonical: false });
-		} });
 	pi.registerTool({ name: "runtime_reconcile", label: "Reconcile Uncertain Effects", approval: "write",
 		description: "Close uncertain (unknown-outcome) effects after reading back the real target state: the working tree, git, or the memory record itself. State what was observed; this is an attestation, never a retry. Optional evidence receipt ids support it.",
 		parameters: z.object({ actionIds: z.array(z.string()), observed: z.string(), evidenceIds: z.array(z.string()) }),
@@ -191,7 +183,7 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 
 	// ---- operator commands ---------------------------------------------------------------------
 	pi.registerCommand("runtime", {
-		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|reject <candidate-id>|recall skip|compat",
+		description: "AGI runtime: /runtime status|pause|resume|reconcile <id|all> [evidence…]|recall skip|compat",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [command = "status", target, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
@@ -208,12 +200,6 @@ export default function agiRuntime(pi: ExtensionAPI): void {
 					const prompt = `실제 대상 상태를 확인했고, 자동 재실행 없이 아래 ${pending.length}건의 불확실성을 해소했습니까?\n${pending.map(x => `${x.id} ${x.tool} ${x.input_hash.slice(0, 12)} (session ${x.session.slice(0, 8)})`).join("\n")}`;
 					if ((await ctx.ui.select(prompt, ["확인 완료", "취소"])) !== "확인 완료") return;
 					for (const x of pending) store!.reconcile(lease!, x.id, rest, { by: "session", observed: "operator confirmed via /runtime reconcile" });
-				} else if (command === "reject") {
-					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target, "USAGE", "/runtime reject <candidate-id>");
-					const row = store!.outbox(target);
-					check(row?.workspace === lease!.workspace && ["candidate", "submitted", "unknown"].includes(row.state), "OUTBOX_STATE_CONFLICT");
-					if ((await ctx.ui.select("이 메모리 후보를 폐기합니까?", ["폐기", "취소"])) !== "폐기") return;
-					store!.setOutbox(lease!, target, row.state, "rejected");
 				} else if (command === "recall") {
 					check(ctx.hasUI, "INTERACTIVE_APPROVAL_REQUIRED"); check(target === "skip", "USAGE", "/runtime recall skip");
 					k.recallSkip("operator");
