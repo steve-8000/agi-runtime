@@ -39,7 +39,7 @@ node scripts/install.mjs --activate            # 기존 runtime symlink 하나�
 node scripts/install.mjs --rollback            # 이전 symlink 복구
 ```
 
-기존 OMP process를 먼저 종료하고, 유지할 checkout에서 활성화한다. 새 process부터 반영된다. 두 runtime을 병렬 로드하지 않는다. 자세한 검증/backup 절차는 MIGRATION.md에 있다. 이 답변에서 실제 활성화한 것은 아니다.
+기존 OMP process를 먼저 종료하고, 유지할 checkout에서 활성화한다. 새 process부터 반영된다. 두 runtime을 병렬 로드하지 않는다. 자세한 검증/backup 절차는 MIGRATION.md에 있다.
 
 이 호스트에서는 이미 활성화되어 있고 링크는 이 checkout을 가리킨다. `--rollback`은 동작하지 않는다:
 `~/.omp/runtime/activation.json`의 `candidate`가 활성화 당시의 임시 checkout 경로이고 그 디렉터리는

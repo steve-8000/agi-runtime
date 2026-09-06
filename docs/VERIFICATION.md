@@ -1,17 +1,19 @@
 # 이번 패키지의 검증
 
-기준일 2026-09-06. 환경: Linux x64, Node v22.16.0. 이 기록은 이전 repository의 81/87 tests를 재사용한 것이 아니다.
+기준일 2026-09-06. 환경: macOS arm64, Node v26.7.0, OMP 18.1.11(Homebrew). 이 기록은 이전 repository의 81/87 tests를 재사용한 것이 아니다.
+최초 패키지 작성은 Linux x64 / Node v22.16.0 컨테이너였고, 아래 수치는 실제 설치 호스트에서 다시 실행한 값이다.
 
 ## 실제 실행
 
 | 명령/검사 | 결과 | 범위 |
 |---|---|---|
-| `node --test tests/*.test.mjs` | 52 passed, 0 failed | 실제 SQLite/임시 파일 시스템 + OMP-shaped mock event adapter |
-| `node scripts/check.mjs` | 15 MJS parser checks + runtime config validation passed | TypeScript/OMP SDK build 아님 |
+| `node --test tests/*.test.mjs` | 54 passed, 0 failed | 실제 SQLite/임시 파일 시스템 + OMP-shaped mock event adapter |
+| `node scripts/check.mjs` | 17 MJS parser checks + runtime config validation passed | TypeScript/OMP SDK build 아님 |
 | `node scripts/measure.mjs` | 1,000 synthetic complete hook cycles | 실제 로컬 SQLite, fake tool 결과, 모델 호출 없음 |
-| install 테스트 | default plan, explicit activation/idempotency/rollback, foreign file/package 거절 | 임시 디렉터리만 변경 |
+| install 테스트 | default plan, explicit activation/idempotency/rollback, foreign file/package 거절, `ompupdate` rc 블록의 고정점·바이트 단위 uninstall·마커 불균형 거절 | 임시 디렉터리와 임시 rc 파일만 변경 |
+| `node scripts/upgrade-check.mjs --live` | PASS, OMP 18.1.11, probe가 저널 1개 생성, 응답 `done` | scratch workspace/runtime dir에서 실제 `omp -p` 1회. 설치된 바이너리의 discover/import/attach를 확인 |
 
-원본 로그: evidence/tests.tap, evidence/check.jsonl, evidence/measure.json.
+원본 로그: evidence/tests.tap, evidence/check.jsonl, evidence/measure.json, evidence/summary.json.
 
 ## 주요 확인
 
