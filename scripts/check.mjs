@@ -1,19 +1,10 @@
 #!/usr/bin/env node
-// Static gate: every JavaScript module parses, and the TypeScript extension typechecks against types/.
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync,readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-const root = fileURLToPath(new URL('../', import.meta.url));
-let count = 0;
-function visit(path) {
-  for (const entry of readdirSync(path, { withFileTypes: true })) {
-    const full = join(path, entry.name);
-    if (entry.isDirectory()) visit(full);
-    else if (/\.(mjs|js)$/.test(entry.name)) { execFileSync(process.execPath, ['--check', full], { stdio: 'pipe' }); count++; }
-  }
-}
-for (const name of ['src', 'scripts', 'tests']) visit(join(root, name));
-console.log(JSON.stringify({ check: 'javascript-syntax', files: count, status: 'passed' }));
-execFileSync('tsc', ['-p', root], { stdio: 'pipe' });
-console.log(JSON.stringify({ check: 'extension-typescript', status: 'passed', scope: 'against types/pi-coding-agent.d.ts, not a full OMP typecheck' }));
+import { config } from '../src/contracts.mjs';
+const root=fileURLToPath(new URL('../',import.meta.url));let files=0;
+for(const dir of ['src','extension','scripts','tests'])for(const name of readdirSync(join(root,dir)))if(name.endsWith('.mjs')){execFileSync(process.execPath,['--check',join(root,dir,name)],{stdio:'pipe'});files++;}
+config(JSON.parse(readFileSync(join(root,'config/runtime.json'),'utf8')));
+console.log(JSON.stringify({check:'syntax-and-config',files,status:'passed',scope:'JavaScript parser and runtime options; not an OMP SDK build or live tool integration'}));

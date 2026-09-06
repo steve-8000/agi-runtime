@@ -1,156 +1,122 @@
-# 아키텍처: OMP 위의 영속적 runtime 계층
+# OMP Native Autonomous Runtime 0.3
 
-기준: 2026-09-05. OMP 18.1.10 (`v18.1.10`, `f241301c`), Homebrew darwin-arm64 바이너리.
+기준: 2026-09-06. `steve-8000/agi-runtime`의 검토 기준은 `580f0e52b67769acc3642053f167eaaf60d2c7ad`. 이 디렉터리는 원격 저장소에 적용하지 않은 replacement candidate다. 기존 기능을 모두 포팅한 fork가 아니라, 책임을 줄여 다시 구현한 경량 extension이다. AGI 능력이나 완전 무인 운영을 증명한 명칭이 아니다.
 
-## 1. 최종 선택
+## 1. 결정
 
-**OMP를 fork하지 않는다. 확장 API 위에 runtime을 얹고 core 수정은 0 파일로 유지한다.**
+**판단과 실행 순서는 OMP, 코드 발견은 zvec, 장기 지식은 gbrain, 실행 관측과 복구 안내는 extension이 소유한다.**
 
-```text
-                 upstream OMP (binary, brew upgrade 로 교체)
-                      │  공개 확장 이벤트만 사용
-                      ▼
-          ~/.omp/agent/extensions/agi-runtime  (→ 이 저장소)
-             ┌────────┼─────────┬──────────┬──────────┐
-             │        │         │          │          │
-        journal    evidence   zvec      recall     memory gates
-      (~/.omp/    (hash 영수증) (read 관측) (첫 효과 전) (전송 전 검사, read-back)
-       runtime)                                        │ 모델이 MCP 로 전송
-                                                       ▼
-                                                       gbrain  = 정본
+```
+User goal + existing permissions
+             |
+       OMP native loop
+       Main sole writer
+         |         | read-only evidence
+         |         +-- Scout / Advisor / Reviewer
+         |             generic task agent disabled
+         |
+         +-- zvec-grep: unknown semantic/cross-file discovery
+         +-- native read/rg/LSP: exact source verification
+         +-- gbrain MCP: recall/entity/context_pack/delta/remember/forget
+         +-- existing tools + existing Kubernetes approval hook
+                    |
+           OMP public events
+                    |
+        one local runtime extension
+        journal -> outcome aggregation -> recovery hints
+                    |
+          fresh request-only context
 ```
 
-역할 분리는 유지한다: `OMP = reasoning + action + search routing`, `zvec-grep = workspace retrieval`, `gbrain = canonical knowledge`. 이 계층은 네 번째 에이전트 프레임워크가 아니라 실행의 유효성을 제한하고 결과를 기록하는 얇은 층이다. 별도 모델 루프, 스케줄러, 벡터 DB, 웹 서비스는 없다.
+OMP의 `task` dispatch 도구와 이름이 `task`인 범용 worker는 다르다. worker는 비활성으로 유지하고, Scout/Reviewer를 부르는 기존 dispatch 경로까지 제거하지 않는다. 모델 이름은 이 패키지에 고정하지 않는다. 기존 OMP modelRoles를 그대로 사용한다.
 
-**권한은 에이전트에게 있다.** 사람 승인은 Kubernetes(clab-cluster 제외)에만 남는다 — `kubernetes-approval.ts`와 §5.1. 이 계층이 강제하는 것은 권한이 아니라 **절차**다: goal의 첫 효과 전에 회상이 settle되어 있을 것, 결과 불명인 효과는 read-back 뒤에 attestation으로 닫을 것, 정본 메모리에 쓰는 사실은 자격증명이 아니고 인용한 근거가 현재일 것. 이 계층은 어떤 훅에서도 턴을 시작하거나 stop을 막지 않는다(`session_stop` 미등록). `agent_end`는 알림뿐이다.
+새 planner, supervisor agent, memory agent, vector database, retrieval proxy, MCP client, scheduler, message queue를 만들지 않는다. extension은 모델 API, gbrain, zvec에 직접 네트워크 요청을 하지 않는다. 모델이 이미 노출된 OMP 도구를 호출한다.
 
-검색을 잘하는 책임은 OMP와 zvec에 둔다. 에이전트는 위치를 모르는 의미·행동·구조·cross-file 질문에 zvec를 먼저 쓰고, 정확한 식별자·전수 occurrence는 native(`grep`/`rg`/LSP/`ast_grep`)로 찾고, 중요한 zvec hit는 현재 소스로 확인한 뒤 결정한다. 이 계층은 그 라우팅을 `before_agent_start` 상태의 `search` 키 한 줄로 전달할 뿐, zvec 호출의 입력(`limit`, `autoUpdate`, `hidden`, query group 수)을 바꾸거나 검색 전략을 결정하지 않는다. 이전 버전의 `boundedSearch`(입력 clamp·scope 키 제거·`search.foreign_root` 이벤트)는 이 이유로 제거했다 — 인덱스 freshness와 query semantics는 zvec 자신의 책임이다.
+## 2. 자율성의 범위
 
-이전 설계의 `withRuntimeBoundary` core patch는 폐기했다. 이유는 두 가지다. (1) 사용자의 OMP는 컴파일된 바이너리라 소스 패치가 실행 경로에 도달하지 않는다. (2) v18.1.10 소스를 읽은 결과 공개 이벤트 네 개가 그 패치가 얻으려던 정보를 모두 제공한다(§3).
+정상적인 조사, 구현, 빌드, 테스트, 수정, 메모리 읽기와 기록은 사용자 확인 없이 진행한다. 이 extension은 승인 대화상자, 회상 의무 게이트, 실행 횟수/효과 횟수/벽시계 예산, 기억 갱신 승인, 완료 검증 에이전트를 추가하지 않는다. 사용자가 중지하거나 pause한 상태는 자동으로 해제하지 않는다.
 
-## 2. 업데이트 내성의 구조
+초기 목표와 유효한 도구 연결/권한은 전제다. 권한 없는 API, 고장 난 외부 서비스, 삭제된 증거에서 사실을 만들어내지 않는다. 해결할 수 없는 개별 작업은 자동으로 보류하고 영향을 받지 않는 작업을 계속한다. 이 보류는 사용자가 `/runtime renew`를 눌러야 풀리는 절차가 아니다.
 
-| 계층 | 업데이트 시 | 왜 유지되는가 |
+**Kubernetes 정책은 기존 것 그대로다.** read-only inspection은 허용. `clab-cluster`의 기존 일반 변경 예외 유지. 다른 대상의 Kubernetes/GitOps 변경은 기존 point-of-action 승인이 필요. headless/subagent K8s mutation은 대상과 무관하게 기존 fail-closed를 유지한다. 기존 고위험/credential/financial/production 범위 보호도 약화하지 않는다. 이 패키지는 명령 문자열을 파싱해 Kubernetes를 재구현하지 않으며 기존 hook을 덮어쓰거나 `allow`로 우회하지 않는다.
+
+실제 `kubernetes-approval.ts`와 OMP 실행 환경은 이 컨테이너에서 읽거나 실행하지 못했다. 보존하는 설계와 mock 비간섭 검사는 실제 배포 보안 보증과 다르다.
+
+## 3. 모듈과 정본
+
+| 소유자 | 정본 또는 책임 | 소유하지 않는 것 |
 |---|---|---|
-| OMP 바이너리 | 교체 | — |
-| `~/.omp/agent/config.yml`, `AGENTS.md`, 기존 확장 | 유지 | OMP 데이터 디렉터리 |
-| `~/.omp/agent/extensions/agi-runtime` (symlink) | 유지 | auto-discovery: 디렉터리의 `package.json#omp.extensions` |
-| `~/.omp/runtime/*` | 유지 | OMP 밖의 우리 디렉터리 |
-| 확장 ↔ OMP 계약 | **검증** | load 시 API/컨텍스트 멤버 probe, 세션 중 이벤트 counters, 버전별 `compat/<v>.json` |
+| OMP | 사용자 목표, 모델 선택, 대화/compaction, 도구 실행, 역할 선택 | 별도 runtime 정책 엔진 |
+| Working tree / 실제 외부 시스템 | 현재 파일과 외부 상태 | 모델의 기억 |
+| zvec-grep | 재생성 가능한 검색 인덱스와 freshness | 승인/완료 여부 |
+| gbrain | 출처가 있는 장기 사실과 결정 | 실행 중 action의 확정 여부 |
+| SQLite journal | 관측한 호출, 결과, 원본 세션 참조, 불명 상태 | 외부 세계의 exactly-once 보증 |
 
-계약이 깨지는 방식은 두 종류다. **구조적**(probe한 멤버 사라짐)은 attach를 거부한다: 알림 한 줄, 저널 없음, OMP 도구는 평소처럼 동작하고 report는 `degraded`. 업데이트마다 OMP를 못 쓰게 되는 것은 "풀림"의 다른 형태이므로 기본은 runtime만 꺼지는 것이다. 무인 실행처럼 경계가 반드시 있어야 하는 곳에서는 `OMP_RUNTIME_REQUIRED=1`로 모든 `tool_call`을 차단한다. 한계: 차단은 `tool_call` 핸들러가 설치된 경우에만 성립한다. `pi.on`이 없거나 factory가 load 중 throw하면 핸들러가 없고, OMP는 확장 load error를 기록한 뒤 도구를 평소처럼 실행한다. **의미적**(이벤트 payload 의미·순서 변경)은 counters(`unmatchedStarts/Results`, `revisions`, `rewrites`)로 드러난다; report만 `degraded`이고 커널은 설정된 `mode`로 계속 동작한다 — 자동 전환은 없다.
+`src/contracts.mjs`는 도구 identity와 작은 outcome reducer, `src/journal.mjs`는 로컬 원장, `src/kernel.mjs`는 이벤트 연결/복구, `src/context.mjs`는 요청용 projection, `extension/index.mjs`는 OMP adapter다. 기존 `evidence`와 dual SQLite adapter는 재사용한다. 새 production dependency는 없다.
 
-`types/pi-coding-agent.d.ts`는 이 확장이 의존하는 OMP 표면의 **최소** 선언이다. 런타임에는 OMP loader가 호스트 패키지로 resolve하므로 쓰이지 않고, `tsc`가 확장을 검사할 때만 쓰인다. 여기 없는 것은 계약이 아니다.
+## 4. 실행을 막는 것과 막지 않는 것
 
-## 3. 실행 경계
+정상 개발 호출에는 재검증 모델이나 추가 I/O probe를 넣지 않는다. 기록에 필요한 SQLite 작업만 수행한다.
 
-v18.1.10 `wrapper.ts`/`agent-loop`가 보장하는 순서:
+- zvec 미호출, gbrain 미회상, checkpoint 부재, 작업 시간/횟수는 차단 사유가 아니다.
+- `hub`, `yield`, `advise`, `goal`, native dispatch, runtime 상태/복구 도구는 회상/불명 이력으로 잠그지 않는다. 기존 호스트 권한까지 우회하는 의미가 아니다.
+- 같은 logical call을 재디스패치하는 경우는 원장에 기록하고 거절한다. 새로운 ID의 동일 내용까지 의미적으로 중복 판정하지 않는다.
+- 코드/불투명 로컬 명령의 불명 이력은 최신 상태를 읽으라는 안내다. **workspace 전체를 잠그지 않는다.** 읽고 판단하는 책임은 Main에 있다.
+- 결과가 불명인 gbrain 쓰기는 새 gbrain 쓰기를 보류한다. 기억을 다시 읽어 결과를 확인하거나, 확인 불가능하면 기록을 미룬다. 코드 수정과 검색은 계속된다.
+- gbrain 쓰기에 명백한 credential 패턴이나 명시적으로 인용한 오래된 evidence가 있으면 해당 요청만 거절한다. 패턴 검사는 완전한 DLP가 아니다. 수정/다른 실제 근거를 사용해 에이전트가 해결한다.
 
-```text
-tool_call            agent loop, arg-prep 시점. input = 원본. 차단/입력 수정 가능.
-                     여러 핸들러가 input 을 수정하면 마지막이 이기고 서로의 수정을 보지 못한다.
-tool_execution_start agent loop. args = 실제 실행 입력 (수정 반영).
-[wrapper]            승인 게이트 → tool.execute → tool_result (middleware 순서 = 확장 로드 순서)
-tool_execution_end   agent loop. result = middleware 통과 후 최종.
-```
+이 설계는 임의 shell의 의미를 추론해서 모든 외부 POST를 dedupe하지 않는다. 네트워크를 건드리는 명령의 nonzero exit는 ‘도구가 오류를 보고했다’는 관측이지 ‘외부 효과가 없었다’는 증명이 아니다.
 
-커널 매핑:
+## 5. 이벤트 정산과 중첩 호출
 
-- `intent(call)` — classify → decision → 메모리 쓰기 게이트(§6) → 회상 게이트(§3.1) → (opt-in) 정확 입력 승인 → unknown 해소 게이트 + 사용량 카운트 + `executing` 행. 거절은 `{block, reason}`으로 모델에 돌아간다. 입력은 절대 바꾸지 않는다.
-- `revise(id, name, args)` — 실행 입력 hash가 intent와 다르면 행을 갱신하고 `action.revised` 이벤트. 메모리 쓰기의 입력이 여기서 바뀌면 그 호출은 게이트를 통과한 intent가 아니므로 결과와 무관하게 `unknown`으로 닫는다(실행은 이 훅에서 막을 수 없다).
-- `settle(id, name, …, phase)` — 첫 관측이 결과를 확정한다. 이후 `isError`가 뒤집히면 `action.rewritten` 이벤트와 `rewrites` 카운트. `tool_result`가 오지 않는 경로(승인 거절, 다른 확장의 차단)는 `tool_execution_end`가 `failed`로 마감한다. 결과 본문은 관측(zvec의 `freshness:`, 회상 결과의 `total`)에만 쓰이고, 저널 상태를 바꾸는 본문은 없다(§6).
-- `turnStart()` — `turn_start`와 `before_agent_start`에서 turn 카운터를 올린다. turn t에 settle된 결과는 t+1의 모델 호출에서 처음 보인다.
+`tool_call`은 intent snapshot이고 `tool_execution_start`는 제공되는 경로에서 실행 입력을 관측한다. `tool_result`는 middleware 결과이므로 원시 결과라고 부르지 않는다. `tool_execution_end`는 제공되는 경로의 후속 결과다.
 
-### 3.1 회상 게이트
+한 호출은 여러 관측을 가질 수 있다. local failure는 나중 성공으로 지워지지 않는다. result/end 오류 또는 exit code가 충돌하면 conflict를 기록한다. 시작 이벤트를 보았으면 end 전에는 성공으로 확정하지 않는다. result-only 호출은 `includes-result-only`라는 관측 품질로 구분한다.
 
-`recall.mode: require`면 goal(`goal.observed`의 id, 없으면 세션)마다 첫 효과 전에 `recall.tools` 중 하나가 **이전 turn에 settle**되어 있어야 한다. intent 관측은 근거가 아니다: 같은 메시지에서 `recall`과 `bash`를 함께 낸 모델은 회상 결과를 읽지 않고 결정한 것이고, OMP는 `tool_call`을 arg-prep 시점에 emit하므로 실행 순서도 보장하지 않는다. 그래서 통과 조건은 `settledTurn < intent.turn`이다. 실패한 회상도 settle이다 — 정본 메모리가 죽어도 작업은 멈추지 않고 `recall.state: failed`가 상태에 남는다. 게이트는 사람 없이 세 경로로 열린다: settle된 회상, 시도의 실패(도구 미등록·백엔드 무응답), 그리고 같은 goal에서 회상 settle 없이 **turn 3회** 거절(`recall.forced`). 한 메시지의 병렬 효과는 같은 미독 회상에 대한 거절 3건이므로 strike는 turn당 1회만 쌓인다. 운영자의 `/runtime recall skip`은 남아 있지만 정상 경로가 아니다. `recall.tools` 밖의 메모리 read(`synthesize`, `delta`)는 회상이 아니다(telemetry). epoch이 오른 재개 세션은 이전 settle을 물려받지 않는다. `hits>0`인 조망 회상 뒤 아무 것도 읽지 않고 첫 효과가 나가면 `recall.shallow` 이벤트 — 차단은 없고 측정만 한다.
+`write(xd://memory-tool)`와 같은 ID의 실제 memory-tool 호출은 **한 logical action / 두 wire observations**다. scope와 결과는 실제 도구 기준으로 통합한다. ID가 다르거나 서로 관계없는 같은 payload는 합치지 않는다. timeout은 불명 action 하나로 남는다. 원문 명령을 원장에 복사하지 않고 session ID, toolCallId, wire tool, 가능한 경우 OMP session file을 참조한다.
 
-`write({path:"xd://<tool>"})`는 봉투일 뿐이라 **디스패치되는 도구로** 분류한다(`src/policy.mjs`의 `dispatched`). 봉투를 opaque write로 보면 디스패치된 회상 read가 효과가 되어 recall 게이트가 자기 자신을 막는다. 게이트가 실제 인자를 필요로 하는 검사(메모리 쓰기)는 중첩 호출 쪽에서 돌고, 봉투는 kind만 물려받는다.
+알려진 memory write는 host 오류, 인식 불가능한 ack 또는 입력 변경 시 unknown이다. 성공 ack도 ‘관측된 성공’이며 암호학적 영수증이나 독립적 외부 증명이 아니다. protocol v1의 상태 필드를 해석하되 답변 본문의 지시문을 실행하지 않는다.
 
-티켓 키는 `(toolCallId, toolName)`이다. 라이브에서 확인한 사실: `write({path:"xd://runtime_status"})`는 중첩 디스패치를 만들고, 그 중첩 `tool_call/tool_result`는 **외부 호출과 같은 toolCallId**를 쓰며 자체 `tool_execution_start/end`가 없다. toolCallId만으로 키를 잡으면 외부 행이 `executing`으로 남아 다음 세션에서 거짓 `unknown`이 된다. 회귀 테스트가 있다.
+## 6. 사람 없이 복구하는 경로
 
-결과 판정: `isError` 또는 `details.exitCode ≠ 0`이면 `failed`(관측된 실패). `unknown`은 **관측이 끊긴 경우**에만 — 프로세스가 하트비트 없이 lapse한 세션의 `executing` 효과. 예외를 무조건 `unknown`으로 두던 이전 규칙은 버렸다: hook 경계에서는 tool의 throw와 `isError` 반환이 구분되지 않고, 테스트 실패(`bash` nonzero)마다 workspace를 얼리는 것은 실용적이지 않다.
+### 원장 정상, memory write 불명
 
-경계 밖: provider-native 실행, 확장의 직접 `exec`, 서브프로세스, 다른 프로세스. 이 계층은 OS sandbox와 credential broker의 대체재가 아니다.
+에이전트가 `runtime_status`로 action과 원본 참조를 보고, gbrain의 확인된 entity/record를 읽는다. 조회 자체가 성공했다는 것과 대상 사실의 존재/부재는 다르다. 유사도 검색에서 안 보였다는 이유만으로 미기록을 확정하지 않는다.
 
-## 4. 저널과 lease
+결과를 확인했으면 `runtime_reconcile(actionIds, readbackIds, observed)`로 명시한 action만 닫는다. 원장은 해당 unknown 이후에 관측한 성공 읽기 ID를 확인한다. 메모리 action은 메모리 읽기를 참조해야 한다. 이 검사는 읽기가 실제로 있었는지에 대한 작은 구조 검사이며 의미적 증명 엔진이 아니다. 에이전트 attestation임을 결과와 event에 남긴다. 확인할 수 없으면 unknown을 유지하고 메모리 쓰기만 미룬다. `all` shortcut이나 관측 없는 성공 승격은 없다.
 
-```text
-workspaces(id, root, paused)
-sessions(id, workspace, epoch, expires, has_ui, tool_calls, effects_used, native_goal, checkpoint)
-actions(id, workspace, session, epoch, tool, input_hash, is_effect, state, outcome_hash)
-events, evidence, approvals(+session)
-```
+### SQLite 장애 / lease 상실
 
-사용자는 같은 저장소에서 여러 OMP 터미널을 동시에 연다(`~/.omp/agent/sessions/` 참조). 그래서 **lease는 세션 단위**다: 같은 세션을 두 프로세스가 동시에 잡는 것만 `SESSION_WRITER_BUSY`로 거절하고, 다른 세션은 하나의 workspace 저널을 공유한다. workspace 전체에 걸치는 사실은 둘뿐이다 — `paused`, 그리고 해소되지 않은 `unknown`. 둘 다 같은 working tree를 건드리는 모든 세션에 관계가 있다.
+한 번의 load-bearing I/O 실패 후 닫힌 DB에 매 호출 재접속하지 않는다. 상태를 degraded로 바꾸고 원장 보장을 주장하지 않는다. 일반 소스 작업은 통과시키며 gbrain 쓰기는 기록이 복구될 때까지 미룬다. 기존 OMP managed timer에서 재열기/lease 획득을 재시도한다. 5초 heartbeat, 30초 lease, 실패 뒤 10초 재시도 간격은 소유권/접속 관리이지 세션 실행 예산이 아니다. 타이머는 새 모델 턴을 만들지 않는다.
 
-`sweep(workspace)`는 `expires ≤ now`인 세션의 `executing` 효과를 `unknown`, 읽기를 `failed`로 옮긴다. acquire 시점과 매 효과 intent 직전에 **별도 트랜잭션으로** 실행한다 — intent 거절(`RECONCILIATION_REQUIRED`, `DUPLICATE_ACTION`)로 롤백되어도 lapse 발견은 남아야 한다. 살아 있는 형제 세션의 `executing`은 건드리지 않는다.
+회복하면 기존 원장을 다시 읽고 불명 상태를 제시한다. action을 자동 재전송하지 않는다. 영구 디스크 장애에서는 진짜 durable checkpoint를 만들어낼 수 없으며 그 사실을 표시한다.
 
-액션 ID는 `digest({session, tool, toolCallId})`. 같은 ID의 재디스패치는 거절한다(과거 성공을 재사용하는 것은 임의 도구에 안전하지 않다). 재개는 epoch만 올리고 사용량 카운터(`tool_calls`, `effects_used`)는 이어진다. 카운터는 관측용이다 — 상한도, 갱신 명령도 없다. 사람이 있는 세션이든 무인이든 카운터가 작업을 멈추는 경로는 두지 않는다.
+### 프로세스 종료
 
-`reconcile`은 read-back의 attestation이다. 에이전트가 `runtime_reconcile`로(저널 `by: session`, `observed`에 확인한 내용) 또는 사람이 `/runtime reconcile`로 닫는다. 근거 영수증은 선택 사항이다. 이전 버전처럼 근거를 필수로 요구하면 "터미널 닫다가 끊긴 bash 한 번"을 풀기 위해 파일 hash를 먼저 만들어야 했다.
+OMP의 JSONL 세션과 원장은 남는다. **프로세스 재기동 자체는 이 extension의 기능이 아니다.** OMP process가 죽으면 in-process timer도 죽는다. 기존 OS/process supervisor가 있다면 OMP의 같은 세션 재개를 담당하게 한다. 이 패키지는 검증되지 않은 `--goal`/`--session` 옵션이나 무조건적인 재실행 스크립트를 추가하지 않는다. 프로세스 자동 재기동까지 포함한 무인 운영은 해당 host에서 별도 확인해야 하며 이번 패키지에서 완료했다고 주장하지 않는다.
 
-`unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다(schema 변경 없이 유도). workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다 — 다시 쓰면 같은 사실이 두 번 들어갈 수 있기 때문이다. 예외는 없다: 읽어서 확인한 뒤 attestation으로 닫는다.
+## 7. 지식 활용은 강하게, 절차 강제는 약하게
 
-메모리에 관한 사실은 저장하지 않고 저널에서 유도한다: `effectsSinceNote`는 마지막 메모리 쓰기 행 이후의 settle된 효과 수다(`rowid` 경계 — 한 tick에 여러 행이 들어온다). `xd://` 봉투로 디스패치된 쓰기도 저널 행의 도구 이름이 실행될 도구이므로 같은 계산에 들어온다. crash 뒤에도 resume card가 같은 값을 낸다.
+zvec은 위치가 불명확한 코드 기능/관계/흐름 탐색의 첫 선택이다. 정확한 문자열과 모든 occurrence는 native 경로로, 중요한 hit는 원문으로 확인한다. runtime은 `limit`, `autoUpdate`, `hidden`, `follow`, `freshness`를 덮어쓰지 않는다. ‘read’ 분류는 사용자 코드 변경이 아니라는 의미이며 인덱스 갱신/embedding 호출이 전혀 없다는 뜻이 아니다.
 
-## 5. 정책
+gbrain은 기존 MCP의 MEMORY_VERBS v1을 사용한다. `recall`/`entity`는 필요한 이전 결정, `context_pack`은 알려진 관련 entity의 cold start/compaction 복구, `delta`는 확인된 cursor 이후 변경에 사용한다. `synthesize`는 매 턴 넣지 않는다. 사실은 `remember`에 provenance와 entity를 붙여 자연스러운 결정/해결 경계에 기록한다. 모든 tool call을 기억으로 만들지 않는다.
 
-분류는 **정확한 도구 이름 표**다. 확장은 OMP의 승인 tier를 볼 수 없고(`ToolInfo`에 없음), 이름 표는 안전한 쪽으로 실패한다 — 모르는 도구는 효과다. `read/grep/glob/ast_grep/web_search/mcp__zvec_grep_search`와 runtime 읽기 도구 = read. `todo/goal/ask`와 runtime 세션 도구 = session-write(효과 아님). `write`는 literal `{path,content}`이고 tree 안·비민감·symlink 없음·비실행이면 `workspace-write`, `edit/ast_edit`는 path 기준. 그 외 = opaque. `memoryReadTools`의 정확한 이름 = read(canonical-memory). read는 입력이 그대로 실행되고, 실패(`isError`)나 lapse는 `failed`로 마감된다 — unknown도 poison도 아니므로 zvec 장애는 native 검색으로의 fallback을 막지 않는다.
+출력 packing인 gbrain `budget_tokens`와 context 크기 제한은 실행 예산과 다르다. 요청이 오래되었다고 일을 중지하지 않고, 응답의 dropped/has_more를 보고 필요한 내용을 점진적으로 더 읽는다. 모델이 쓸 MCP schema가 실제 API 계약이고 이 패키지는 스키마를 복제하지 않는다.
 
-결정: read/session-write는 항상 허용. 효과는 `headlessEffects`, 구조화 infra 정책(§5.1), `requireApproval`을 거친다. **OMP 자체의 approval mode와 `kubernetes-approval.ts`가 이미 프롬프트를 담당한다**; 이 계층은 운영자가 명시한 도구에만 정확 입력·1회용 승인을 더한다. 이전 버전의 "모든 opaque exec에 승인"은 사용자의 `yolo` 선택과 충돌하므로 상시 계층의 기본에서 뺐다.
+## 8. 컨텍스트 계약
 
-`read`의 민감 경로(`.env`, `.omp`, `.ssh`, 절대 경로, tree 밖)는 `read.sensitive` 이벤트로 저널에 남긴다. 차단하지 않는다 — 그것은 OMP의 권한 모델과 OS의 일이며, 여기서 막으면 `~/.omp/agent/config.yml`을 읽는 정당한 작업까지 깨진다.
+`before_agent_start`와 모델 호출 1회는 동일한 개념이 아니다. 이전 설명의 ‘매 모델 호출마다 before_agent_start’ 가정은 폐기한다.
 
-### 5.1 Kubernetes/GitOps
+이 구현은 OMP `context`에서 detached messages를 받아 **요청용 최신 projection 하나**를 만든다. 자체 과거 runtime 메시지만 제거하고 다른 extension 정책, user, tool 결과, OMP 원본 기록은 변경하지 않는다. 이 메시지를 native history에 append하지 않는다.
 
-`structuredOperationTools`가 공급하는 신뢰된 descriptor에만 적용된다. shell 문자열 파싱으로 권한을 판단하지 않는다(`eval`, Python, HTTP, SSH 모두 같은 결과를 만들 수 있다). headless 금지 → target fingerprint 일치 → `clab-cluster` 비고위험 예외 → 나머지 승인. 현재 연결된 어댑터는 없다. 실제 클러스터 승인은 `kubernetes-approval.ts`다.
+평상시에는 짧은 search/memory routing만 남긴다. usage/discovery 수치, goal mirror, unchanged checkpoint는 넣지 않는다. resume/compaction 때만 짧은 checkpoint를 한 모델 round에 제공하고, unknown/degraded/pause는 존재하는 동안 필요한 최소 내용만 제공한다. 상세 이력은 `runtime_status`로 읽는다.
 
-## 6. 메모리
+정상 payload 실측 317바이트, 큰 resume+unknown 예시 2,296바이트. 최대 4,096바이트 출력 packing. 1,000번 projection 생성 후 own message 수는 하나다. provider별 tokenizer/token 비용과 cache hit는 측정하지 않았다. 새 토큰 누적이 없다는 것은 매 요청에서 공짜라는 뜻이 아니다.
 
-zvec에는 code/workspace 문서만. 정본 기록을 다시 색인하지 않는다. 검색 결과는 evidence이지 truth가 아니다 — `runtime_evidence`로 현재 원문 hash를 남긴 뒤에만 사실의 근거가 된다.
+## 9. 장기 유지 기준
 
-정본 메모리는 gbrain이고, 쓰는 주체는 모델이다. 이 프로세스는 MCP 도구를 호출할 수 없으므로(`ctx.invokeTool`은 같은 이름의 built-in 위임뿐) 런타임이 전송을 소유하는 설계는 애초에 불가능하다. 이 계층이 소유하는 것은 **의무와 정합성**이다.
+미래 모델의 성능을 예측해 이름이나 effort를 코드에 고정하지 않는다. 모델이 바뀌면 OMP modelRoles만 바꾼다. 요청 의미는 모델, 프로토콜 parsing과 durability는 코드라는 경계를 유지한다.
 
-읽기는 `recall`(질의는 코퍼스 조망, `entity`는 아는 대상), `entity`, `context_pack`, `delta`, `synthesize`. 쓰기는 `remember`(사실 하나 + provenance 필수)와 `forget`(id로 만료). 한 도구가 읽기·쓰기 목록에 동시에 들어갈 수 없다 — 게이트가 다르다.
+OMP public event contract, gbrain protocol v1, zvec live schema에 의존한다. 작은 adapter와 deterministic contract tests만 업데이트한다. 호환성을 검사하는 것은 모든 미래 버전에서 동작한다고 보장하는 것과 다르다. 모든 agent 종류가 같은 events를 낸다고 가정하지 않는다.
 
-쓰기의 결과 본문은 전부 telemetry다. 서버가 강제하는 멱등 키가 없고 중복 판정은 임베딩 유사도이므로, "성공"이라는 텍스트도 "같은 사실이 한 번만 들어갔다"를 증명하지 않는다. 그래서:
-
-- 쓰기의 `isError`는 `unknown(remote)`이다. 기록됐는지 알 수 없다는 뜻이고, 문구를 바꿔 다시 쓰는 것은 두 번 기록할 위험이다.
-- 실행 입력이 게이트 통과 후 바뀐 쓰기(`action.revised`)는 성공해도 `unknown`이다. 게이트를 통과한 intent가 아니다.
-- 해소는 하나뿐이다: 기록을 읽어(`recall`/`entity`) 실제 상태를 확인한 뒤 `runtime_reconcile`에 관측한 내용을 적는다. 저널에 `by: session`으로 남는다.
-- 전송 전 검사(전부 구조적): 자격증명 패턴(`MEMORY_SECRET` — 한 번 들어가면 정본에서 지우기 어렵다), 인용된 evidence의 현재성(`STALE_EVIDENCE`), 직전 메모리 호출의 결과가 **불명**이면 읽기 먼저(`MEMORY_BACKEND_DEGRADED` — 확정된 실패는 막지 않는다 — 장애 중 unknown이 쌓이지 않게).
-- 근거를 인용하지 않은 사실은 허용하고 `memory.unverified`로 센다. 결정·제약·사고 기록은 파일 범위와 무관한 경우가 많다.
-
-`unknown`에는 범위가 있다. 도구 이름이 `memoryWriteTools`면 `remote`, 아니면 workspace다. workspace 효과는 workspace unknown에만 막히고, 메모리 쓰기는 둘 다에 막힌다. 메모리 쓰기 하나가 불명이라고 작업 트리 작업이 멈추지는 않는다.
-
-`agent_end`에서 `effectsSinceNote > 0`이면 한 줄 알린다. 기록하라고 말하는 것은 사용자다 — 이 계층은 continue를 하지 않는다.
-
-로컬 staging 단계는 두지 않는다. 정본 쓰기 도구가 곧 정본이고, 같은 사실을 두 곳에 두면 어느 쪽이 사실인지 물어야 한다. `runtime_checkpoint`는 정본이 아니라 이 세션의 복구 상태다.
-
-## 7. 결정 기록과 이견
-
-| 결정 | 대안 | 이유 |
-|---|---|---|
-| hook 경계, core patch 0 | built-in shadowing(`registerTool` + `ctx.invokeTool`) | shadowing은 도구별 스키마 재선언이 필요해 업데이트마다 drift. hook은 네 이벤트만 의존 |
-| `headlessEffects: allow` 기본 | `deny` | AGENTS.md headless 조항은 k8s 한정. 서브에이전트는 확장 미로드. `deny`는 `omp -p`를 읽기 전용으로 만듦. **advisor는 `deny`를 권고했다** — 한 줄로 전환 가능 |
-| 세션 lease | workspace 단일 writer | 사용자는 같은 저장소에 여러 터미널을 연다. lease는 저널 소유권만 정하고 도구를 막지 않는다: 만료된 lease는 되찾고(`writer.reclaimed`), 살아 있는 홀더가 있으면 저널 없이 일하며 `poisoned`로 노출한다 |
-| `isError` = failed | = unknown | hook에서 throw/isError 구분 불가. 테스트 실패마다 workspace 정지는 비실용적. unknown은 관측 단절에만 |
-| 구조적 계약 위반 시 runtime 비활성(도구는 동작) | fail closed | 업데이트 후 OMP 불능도 "풀림". `OMP_RUNTIME_REQUIRED=1`로 fail closed 선택 가능 |
-| `memoryReadTools` 사전 채움 | 빈 배열 | 서버 소스와 실행 중 라우트에서 이름·읽기 여부 확인 |
-| 회상 게이트를 turn 기준 settle로 | intent 관측 1건 | 병렬 tool call은 실행 전에 모두 intent를 지나고, 같은 메시지의 효과는 회상 결과를 읽지 않은 결정이다 |
-| 회상 게이트는 3회 거절 후 스스로 열림 | 사람이 `/runtime recall skip` | 도구 부재는 사전 관측이 불가능하고(OMP에 세션 도구 목록 API 없음) 사람 개입을 요구하면 자율 실행이 멈춘다. 시도의 실패와 반복 거절은 관측 가능하므로 그것으로 강등한다 |
-| 저널 쓰기 실패는 관측으로 강등 | 효과 차단(fail closed) | 원장이 깨진 것은 작업을 멈출 이유가 아니다. 차단하면 세션 재시작 외에 풀 방법이 없었다. `journal.degraded` 이벤트와 상태로 노출한다 |
-| `OMP_RUNTIME_REQUIRED=1`은 호스트 계약 위반에만 fail closed | attach 실패 전체 | 운영자 config의 낡은 키나 다른 세션이 쥔 writer lease는 호스트 계약이 아니다. 그걸로 모든 도구를 막으면 자율 실행이 사람 손을 요구한다 |
-| 쓰기 오류는 전부 `unknown` | 결과 텍스트로 `failed` 강등 | 텍스트는 middleware가 바꿀 수 있고 중복 기록은 지우기 어렵다. 강등할 근거가 없다 |
-| 모델이 전송, 런타임은 검증 | 런타임이 소유한 전송 계층 | `invokeTool`은 same-tool 위임뿐이다. 둘째 클라이언트는 이중 구현 |
-| `agent_end` 알림만 | `session_stop` continue | 둘째 자율 루프 금지(`AGENTS.runtime.md`). 사용자가 continuation 권한자 |
-
-## 8. 남은 통합 게이트
-
-1. Kubernetes target resolver/broker (CA/server identity, GitOps repo/ref) → `structuredOperationTools` 연결.
-2. `recall.shallow`·`memory.unverified`·`memory.note_due`·`discovery.readsBeforeFirstZvec`를 몇 세션 관측한 뒤 goal 전환 시 `noteDue` 게이트 여부를 결정한다. 측정 전에는 advisory다.
-3. 사용량 이벤트와 goal ID를 연결하되 관측용으로만 사용한다. Runtime은 호출 수·효과 수·세션 경과시간을 근거로 작업을 중단하지 않는다.
-4. 동일 workload A/B 측정 후 자율성 확대.
-
-각 단계는 독립적으로 검증한다. 이번 단계(extension-first 전환, 라이브 검증)가 통과했다고 다음 단계가 준비됐다고 기록하지 않는다.
+기존 기능이 upstream에 들어오면 겹치는 extension 코드를 제거한다. 실제 실패/운영 이득이 없는 새로운 hook, 설정, daemon, agent, 검증 규칙은 추가하지 않는다. 완료 판정은 기존 프로젝트의 검사와 Main/Reviewer 책임이며 새로운 acceptance service는 만들지 않는다.

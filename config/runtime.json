@@ -1,27 +1,5 @@
 {
-  "mode": "enforce",
-  "blockOnUnknown": true,
-  "headlessEffects": "allow",
-  "requireApproval": [],
-  "memoryReadTools": [
-    "mcp__gbrain_recall",
-    "mcp__gbrain_entity",
-    "mcp__gbrain_context_pack",
-    "mcp__gbrain_delta",
-    "mcp__gbrain_synthesize"
-  ],
-  "memoryWriteTools": [
-    "mcp__gbrain_remember",
-    "mcp__gbrain_forget"
-  ],
-  "recall": {
-    "mode": "require",
-    "tools": [
-      "mcp__gbrain_recall",
-      "mcp__gbrain_entity",
-      "mcp__gbrain_context_pack"
-    ]
-  },
-  "structuredOperationTools": [],
-  "targets": {}
+  "memoryReadTools": ["mcp__gbrain_recall", "mcp__gbrain_entity", "mcp__gbrain_context_pack", "mcp__gbrain_delta", "mcp__gbrain_synthesize"],
+  "memoryWriteTools": ["mcp__gbrain_remember", "mcp__gbrain_forget"],
+  "searchTools": ["mcp__zvec_grep_search"]
 }

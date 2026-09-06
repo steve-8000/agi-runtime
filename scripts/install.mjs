@@ -1,39 +1,34 @@
 #!/usr/bin/env node
-// Install the AGI runtime into OMP's user extension directory as a symlink to this checkout.
-// Idempotent. Never overwrites a foreign file at the target. `--uninstall` removes only our link.
-import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, copyFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { runtimeLayout, defaultAgentDir } from '../src/paths.mjs';
-import { check } from '../src/util.mjs';
-
-const repo = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
-const layout = runtimeLayout(defaultAgentDir());
-const uninstall = process.argv.includes('--uninstall');
-
-function linkState() {
-  if (!existsSync(layout.extensionLink) && !isLink()) return 'absent';
-  if (!isLink()) return 'foreign-file';
-  return realpathSync(layout.extensionLink) === repo ? 'ours' : 'foreign-link';
+// Explicit activation only. The default is a read-only plan. Never load two runtime versions.
+import {existsSync,lstatSync,readlinkSync,realpathSync,mkdirSync,readFileSync,writeFileSync,symlinkSync,renameSync,unlinkSync,copyFileSync,chmodSync} from 'node:fs';
+import {dirname,resolve,join} from 'node:path';
+import {homedir} from 'node:os';
+import {fileURLToPath} from 'node:url';
+const argv=process.argv.slice(2),root=realpathSync(fileURLToPath(new URL('../',import.meta.url)));
+let agentDir=process.env.PI_CODING_AGENT_DIR??join(homedir(),'.omp','agent'),action='plan';
+for(let i=0;i<argv.length;i++){
+ if(argv[i]==='--agent-dir'&&argv[i+1])agentDir=resolve(argv[++i]);
+ else if(argv[i]==='--activate'&&action==='plan')action='activate';
+ else if(argv[i]==='--rollback'&&action==='plan')action='rollback';
+ else throw new Error(`Unknown or conflicting argument: ${argv[i]}`);
 }
-function isLink() { try { return lstatSync(layout.extensionLink).isSymbolicLink(); } catch { return false; } }
-
-const before = linkState();
-if (uninstall) {
-  check(before !== 'foreign-file' && before !== 'foreign-link', 'FOREIGN_EXTENSION_AT_TARGET', `${layout.extensionLink} is not ours; not touching it`);
-  if (before === 'ours') unlinkSync(layout.extensionLink);
-} else {
-  check(before !== 'foreign-file' && before !== 'foreign-link', 'FOREIGN_EXTENSION_AT_TARGET', `${layout.extensionLink} exists and does not point at ${repo}`);
-  mkdirSync(dirname(layout.extensionLink), { recursive: true });
-  if (before === 'absent') symlinkSync(repo, layout.extensionLink, 'dir');
-  mkdirSync(layout.journals, { recursive: true, mode: 0o700 });
-  mkdirSync(layout.compat, { recursive: true, mode: 0o700 });
-  // Operator config is seeded once from the repo defaults and then owned by the operator.
-  if (!existsSync(layout.config)) copyFileSync(join(repo, 'config', 'runtime.json'), layout.config);
+const state=resolve(process.env.OMP_RUNTIME_DIR??join(dirname(agentDir),'runtime'));
+const target=join(agentDir,'extensions','agi-runtime'),record=join(state,'activation.json');
+const linkInfo=()=>{try{const stat=lstatSync(target);if(!stat.isSymbolicLink())throw new Error('FOREIGN_FILE_AT_EXTENSION_TARGET');return resolve(dirname(target),readlinkSync(target));}catch(e){if(e.code==='ENOENT')return null;throw e;}};
+let current=linkInfo(),changed=false;
+if(action==='activate'&&current!==root){
+ if(current){const pkg=JSON.parse(readFileSync(join(current,'package.json'),'utf8'));if(pkg.name!=='@clab/omp-agi-runtime')throw new Error('FOREIGN_EXTENSION_AT_TARGET');}
+ mkdirSync(dirname(target),{recursive:true});mkdirSync(state,{recursive:true,mode:0o700});
+ const cp=process.env.OMP_RUNTIME_CONFIG??join(state,'config.json');
+ if(!existsSync(cp)){mkdirSync(dirname(cp),{recursive:true,mode:0o700});copyFileSync(join(root,'config/runtime.json'),cp);chmodSync(cp,0o600);}
+ writeFileSync(record,JSON.stringify({previousTarget:current,candidate:root},null,2)+'\n',{mode:0o600});
+ const temp=`${target}.${process.pid}.tmp`;try{symlinkSync(root,temp,'dir');renameSync(temp,target);}finally{try{unlinkSync(temp);}catch{}}
+ current=linkInfo();changed=true;
+}else if(action==='rollback'){
+ const saved=JSON.parse(readFileSync(record,'utf8'));
+ if(current!==saved.candidate)throw new Error('TARGET_CHANGED_SINCE_ACTIVATION');
+ if(saved.previousTarget){const temp=`${target}.${process.pid}.tmp`;try{symlinkSync(saved.previousTarget,temp,'dir');renameSync(temp,target);}finally{try{unlinkSync(temp);}catch{}}}
+ else unlinkSync(target);
+ current=linkInfo();changed=true;
 }
-console.log(JSON.stringify({
-  action: uninstall ? 'uninstall' : 'install', repo, extensionLink: layout.extensionLink,
-  linkTarget: isLink() ? readlinkSync(layout.extensionLink) : null, before, after: linkState(),
-  runtimeDir: layout.root, config: layout.config, configPresent: existsSync(layout.config),
-  next: uninstall ? null : 'start a new omp session; then `node scripts/doctor.mjs` (or `--live` compat) to confirm it loaded'
-}, null, 2));
+console.log(JSON.stringify({action,candidate:root,target,current,runtimeDir:state,changed,preserved:['OMP config.yml','AGENTS.md','Kubernetes approval hook','MCP credentials','journal data'],note:'Restart the OMP process to load a different extension version. No running process was altered.'},null,2));

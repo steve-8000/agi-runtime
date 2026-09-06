@@ -1,139 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import agiRuntime from '../extension/index.ts';
-import { RuntimeStore } from '../src/store.mjs';
-import { runtimeLayout, journalPath } from '../src/paths.mjs';
-import { mockPi, mockCtx, dispatch } from './mock-pi.mjs';
-
-async function harness(t, { hasUI = true, omit = [], config, required = false } = {}) {
-  const base = mkdtempSync(join(tmpdir(), 'omp-extension-'));
-  const root = join(base, 'workspace'); mkdirSync(root); writeFileSync(join(root, 'code.txt'), 'actual source\n');
-  const agentDir = join(base, 'omp', 'agent'); mkdirSync(agentDir, { recursive: true });
-  const runtimeDir = join(base, 'omp', 'runtime'); mkdirSync(runtimeDir, { recursive: true });
-  if (config) writeFileSync(join(runtimeDir, 'config.json'), JSON.stringify(config));
-  const env = { OMP_RUNTIME_DIR: process.env.OMP_RUNTIME_DIR, OMP_RUNTIME_REQUIRED: process.env.OMP_RUNTIME_REQUIRED };
-  process.env.OMP_RUNTIME_DIR = runtimeDir;
-  if (required) process.env.OMP_RUNTIME_REQUIRED = '1'; else delete process.env.OMP_RUNTIME_REQUIRED;
-  // The module reads OMP_RUNTIME_REQUIRED at import time; re-import with a cache-buster like OMP's loader does.
-  const factory = required ? (await import(`../extension/index.ts?required=${Date.now()}`)).default : agiRuntime;
-  const m = mockPi({ agentDir, omit });
-  const ctx = mockCtx({ cwd: root, hasUI });
-  factory(m.pi);
-  t.after(async () => {
-    try { await m.handlers.get('session_shutdown')?.({}, ctx); } finally {
-      for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-      rmSync(base, { recursive: true, force: true });
-    }
-  });
-  const layout = runtimeLayout(agentDir);
-  return { ...m, ctx, root, base, layout, journal: () => journalPath(layout, root),
-    async openJournal() { const s = await RuntimeStore.open(journalPath(layout, root)); t.after(() => s.close()); return s; },
-    report: () => JSON.parse(readFileSync(join(layout.compat, '18.1.10.json'), 'utf8')) };
+import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import factory from '../extension/index.mjs';
+import {databasePath,Journal} from '../src/journal.mjs';
+import {STATE_TYPE} from '../src/contracts.mjs';
+async function harness(t,{missing,hasUI=true}={}){
+ const dir=mkdtempSync(join(tmpdir(),'omp-contract-')),root=join(dir,'workspace'),agent=join(dir,'.omp','agent'),runtimeDir=join(dir,'.omp','runtime');
+ mkdirSync(root);mkdirSync(agent,{recursive:true});mkdirSync(runtimeDir);writeFileSync(join(root,'a.txt'),'source');
+ const handlers=new Map(),tools=new Map(),commands=new Map(),timers=new Set(),notices=[];
+ const s={optional(){return this;},int(){return this;},min(){return this;}};
+ const pi={on:(n,f)=>handlers.set(n,f),registerTool:o=>tools.set(o.name,o),registerCommand:(n,o)=>commands.set(n,o),setLabel(){},zod:{object:()=>s,array:()=>s,string:()=>s,number:()=>s,boolean:()=>s},pi:{VERSION:'18.1.11',getAgentDir:()=>agent},logger:{warn:m=>notices.push(m),info:m=>notices.push(m)}};
+ const ctx={cwd:root,hasUI,sessionManager:{getSessionId:()=> 'mock-session',getSessionFile:()=>join(dir,'session.jsonl')},setInterval:f=>{timers.add(f);return f;},clearTimer:f=>timers.delete(f),ui:{notify:m=>notices.push(m)},abort(){ctx.aborted=true;}};
+ if(missing==='context')delete ctx.sessionManager.getSessionId;
+ const env=process.env.OMP_RUNTIME_DIR;process.env.OMP_RUNTIME_DIR=runtimeDir;
+ factory(pi); await handlers.get('session_start')({},ctx);
+ t.after(async()=>{await handlers.get('session_shutdown')?.({},ctx);if(env===undefined)delete process.env.OMP_RUNTIME_DIR;else process.env.OMP_RUNTIME_DIR=env;rmSync(dir,{recursive:true,force:true});});
+ return {pi,ctx,handlers,tools,commands,timers,dir,root,runtimeDir,notices,
+  async dispatch(toolCallId,toolName,input={},isError=false){const c={toolCallId,toolName,input};const blocked=await handlers.get('tool_call')(c,ctx);if(blocked)return blocked;handlers.get('tool_execution_start')({...c,args:input},ctx);const result={content:[{type:'text',text:'ok'}],details:{exitCode:0}};handlers.get('tool_result')({...c,...result,isError},ctx);handlers.get('tool_execution_end')({...c,result,isError},ctx);return undefined;},
+  async status(p={}){return (await tools.get('runtime_status').execute('status',p,undefined,undefined,ctx)).details;}
+ };
 }
-
-test('loads with the tested contract, journals a full tool cycle, and reports compat ok', async t => {
-  const h = await harness(t);
-  assert.equal(h.pi.label, 'AGI Runtime'); assert.equal(h.tools.size, 4); assert.ok(h.commands.has('runtime'));
-  for (const event of ['turn_start', 'agent_end', 'session_compact', 'auto_compaction_end']) assert.ok(h.handlers.has(event), event);
-  assert.equal(h.handlers.has('session_stop'), false, 'the runtime never continues or blocks a stop');
-  await h.handlers.get('session_start')({}, h.ctx);
-  assert.equal(existsSync(h.journal()), true, 'journal created under runtime dir');
-  assert.equal(h.report().verdict, 'ok'); assert.deepEqual(h.report().api.missing, []);
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'r1', toolName: 'read', input: { path: 'code.txt' } }), undefined);
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } }), undefined);
-  await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'false' }, details: { exitCode: 1 } });
-  const s = await h.openJournal();
-  assert.deepEqual(s.db.prepare('SELECT tool,is_effect,state FROM actions ORDER BY created').all().map(r => ({ ...r })),
-    [{ tool: 'read', is_effect: 0, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'succeeded' }, { tool: 'bash', is_effect: 1, state: 'failed' }]);
-  const state = JSON.parse(h.handlers.get('before_agent_start')({}, h.ctx).message.content);
-  assert.deepEqual(state.usage, { toolCalls: 3, effects: 2 }); assert.equal(state.blockedUntilReconciled, false);
-  assert.equal(state.search.semanticDiscovery, 'mcp__zvec_grep_search');
-});
-test('runtime tools chain evidence into a checkpoint, and no runtime tool writes to canonical memory', async t => {
-  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
-  const evidence = await h.tools.get('runtime_evidence').execute('e1', { path: 'code.txt', start: 1, end: 1 }, undefined, undefined, h.ctx);
-  assert.ok(evidence.details.evidenceId); assert.equal(evidence.details.verified, true);
-  await h.tools.get('runtime_checkpoint').execute('c1', { summary: '근거 확인 완료', nextAction: '구현', evidenceIds: [evidence.details.evidenceId] }, undefined, undefined, h.ctx);
-  const status = (await h.tools.get('runtime_status').execute('s1', {}, undefined, undefined, h.ctx)).details;
-  assert.equal(status.checkpoint.summary, '근거 확인 완료');
-  assert.deepEqual([...h.tools.keys()].filter(name => /memory|candidate|publish/.test(name)), [], 'the model writes memory with its own tool');
-  await h.commands.get('runtime').handler('publish anything', h.ctx);
-  assert.match(h.ctx.notices.at(-1).message, /UNKNOWN_RUNTIME_COMMAND/);
-});
-test('runtime_reconcile passes the boundary while a workspace unknown and the recall gate hold effects, and journals who attested', async t => {
-  const memory = 'mcp__gbrain_recall';
-  const h = await harness(t, { config: { memoryReadTools: [memory], recall: { mode: 'require', tools: [memory] } } }); await h.handlers.get('session_start')({}, h.ctx);
-  const s = await h.openJournal(); const ghost = s.acquire(s.workspace(h.root).id, 'ghost', { ttl: 1000 });
-  s.beginAction(ghost, { actionId: 'ghost-1', tool: 'bash', input: { command: 'deploy' } });
-  await new Promise(resolve => setTimeout(resolve, 1100));
-  h.handlers.get('before_agent_start')({}, h.ctx);
-  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } })).reason, /RECALL_REQUIRED|RECONCILIATION_REQUIRED/);
-  // The model's call arrives as tool_call first: a session write, so neither the unknown it resolves nor the recall gate holds it.
-  const input = { actionIds: ['ghost-1'], observed: 'git status clean; deploy did not run', evidenceIds: [] };
-  assert.equal(await h.handlers.get('tool_call')({ type: 'tool_call', toolCallId: 'rc', toolName: 'runtime_reconcile', input }, h.ctx), undefined);
-  const result = await h.tools.get('runtime_reconcile').execute('rc', input, undefined, undefined, h.ctx);
-  await h.handlers.get('tool_result')({ type: 'tool_result', toolCallId: 'rc', toolName: 'runtime_reconcile', input, content: result.content, details: result.details, isError: false }, h.ctx);
-  await h.handlers.get('tool_execution_end')({ type: 'tool_execution_end', toolCallId: 'rc', toolName: 'runtime_reconcile', result, isError: false }, h.ctx);
-  assert.deepEqual(result.details, { reconciled: ['ghost-1'], remaining: 0 });
-  assert.deepEqual(s.db.prepare("SELECT tool,is_effect,state FROM actions WHERE tool='runtime_reconcile'").all().map(r => ({ ...r })), [{ tool: 'runtime_reconcile', is_effect: 0, state: 'succeeded' }]);
-  const attested = s.events(s.workspace(h.root).id).find(e => e.kind === 'action.reconciled');
-  assert.equal(attested.payload.by, 'session'); assert.match(attested.payload.observed, /git status clean/);
-  await dispatch(h.handlers, h.ctx, { toolCallId: 'q1', toolName: memory, input: { query: 'deploy' } }); h.handlers.get('before_agent_start')({}, h.ctx);
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'true' } }), undefined);
-});
-test('agent_end only notifies about unrecorded effects, and a re-attach hands the model one resume card of journal facts', async t => {
-  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
-  const state = () => JSON.parse(h.handlers.get('before_agent_start')({}, h.ctx).message.content);
-  assert.equal(state().resume, undefined, 'a fresh session has nothing to resume');
-  await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } });
-  const before = h.ctx.notices.length; await h.handlers.get('agent_end')({}, h.ctx);
-  assert.match(h.ctx.notices.at(-1).message, /1 effects since the last canonical-memory write/); assert.equal(h.ctx.notices.length, before + 1);
-  assert.equal(state().memory.effectsSinceNote, 1);
-  await h.handlers.get('session_switch')({}, h.ctx);
-  const card = state().resume;
-  assert.equal(card.epoch, 2); assert.equal(card.effectsSinceNote, 1); assert.deepEqual(card.recent.map(x => [x.tool, x.state]), [['bash', 'succeeded']]);
-  assert.equal(state().resume, undefined, 'the card is delivered once');
-  await h.handlers.get('session_compact')({}, h.ctx); assert.ok(state().resume, 'and again after a compaction');
-});
-test('/runtime pause blocks effects, resume restores; reconcile all clears uncertainty from a lapsed session', async t => {
-  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
-  await h.commands.get('runtime').handler('pause', h.ctx); assert.equal(h.ctx.aborted, true);
-  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b1', toolName: 'bash', input: { command: 'true' } })).reason, /RUNTIME_PAUSED/);
-  await h.commands.get('runtime').handler('resume', h.ctx);
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b2', toolName: 'bash', input: { command: 'true' } }), undefined);
-  // Another process left an effect executing and never came back.
-  const s = await h.openJournal(); const ghost = s.acquire(s.workspace(h.root).id, 'ghost', { ttl: 1000 });
-  s.beginAction(ghost, { actionId: 'ghost-1', tool: 'bash', input: { command: 'deploy' }, isEffect: true });
-  await new Promise(r => setTimeout(r, 1100));
-  assert.match((await dispatch(h.handlers, h.ctx, { toolCallId: 'b3', toolName: 'bash', input: { command: 'true' } })).reason, /RECONCILIATION_REQUIRED/);
-  await h.commands.get('runtime').handler('reconcile all', h.ctx);
-  assert.equal(await dispatch(h.handlers, h.ctx, { toolCallId: 'b4', toolName: 'bash', input: { command: 'true' } }), undefined);
-});
-test('a host missing a required API member disables the runtime and lets tools run unless OMP_RUNTIME_REQUIRED=1', async t => {
-  const relaxed = await harness(t, { omit: ['registerCommand'] });
-  await relaxed.handlers.get('session_start')({}, relaxed.ctx);
-  assert.match(relaxed.ctx.notices[0].message, /disabled: EXTENSION_CONTRACT_MISMATCH.*registerCommand/);
-  assert.equal(relaxed.report().verdict, 'degraded');
-  assert.equal(await relaxed.handlers.get('tool_call')({ toolCallId: 'x', toolName: 'bash', input: {} }, relaxed.ctx), undefined);
-  const strict = await harness(t, { omit: ['registerCommand'], required: true });
-  await strict.handlers.get('session_start')({}, strict.ctx);
-  assert.match((await strict.handlers.get('tool_call')({ toolCallId: 'x', toolName: 'bash', input: {} }, strict.ctx)).reason, /RUNTIME_HANDLER_REQUIRED/);
-});
-test('operator config in the runtime dir is honoured and a broken one fails closed', async t => {
-  const strict = await harness(t, { config: { headlessEffects: 'deny' }, hasUI: false });
-  await strict.handlers.get('session_start')({}, strict.ctx);
-  assert.match((await dispatch(strict.handlers, strict.ctx, { toolCallId: 'w1', toolName: 'write', input: { path: 'a.txt', content: 'x' } })).reason, /HEADLESS_EFFECT/);
-  assert.equal(await dispatch(strict.handlers, strict.ctx, { toolCallId: 'r1', toolName: 'read', input: { path: 'code.txt' } }), undefined);
-  const broken = await harness(t, { config: { mode: 'yolo' } });
-  await broken.handlers.get('session_start')({}, broken.ctx);
-  assert.match(broken.ctx.notices[0].message, /INVALID_RUNTIME_MODE/);
-});
-test('shutdown releases the lease so the same session can be resumed by the next process', async t => {
-  const h = await harness(t); await h.handlers.get('session_start')({}, h.ctx);
-  await h.handlers.get('session_shutdown')({}, h.ctx);
-  const s = await h.openJournal(); assert.doesNotThrow(() => s.acquire(s.workspace(h.root).id, 'mock-session'));
-  assert.deepEqual(readdirSync(h.layout.compat), ['18.1.10.json']);
-});
+test('extension registers only existing responsibilities and no loop or approval hook',async t=>{const h=await harness(t);assert.equal(h.tools.size,4);for(const name of ['session_stop','before_provider_request','agent_end','before_agent_start'])assert.equal(h.handlers.has(name),false);assert.equal(h.handlers.has('context'),true);});
+test('normal headless development works without an interactive prompt',async t=>{const h=await harness(t,{hasUI:false});assert.equal(await h.dispatch('b','bash',{command:'true'}),undefined);assert.equal((await h.status()).health,'healthy');});
+test('context callback does not mutate native input or grow old runtime messages',async t=>{const h=await harness(t);const messages=[{role:'user',content:'work'},{role:'custom',customType:'agi-runtime-state',content:'old'},{role:'custom',customType:'kubernetes-approval',content:'keep'}];const before=structuredClone(messages);let r=h.handlers.get('context')({messages},h.ctx).messages;for(let i=0;i<50;i++)r=h.handlers.get('context')({messages:r},h.ctx).messages;assert.deepEqual(messages,before);assert.equal(r.filter(m=>m.customType===STATE_TYPE).length,1);assert.equal(r.some(m=>m.customType==='kubernetes-approval'),true);});
+test('context contract failure disables only this extension, without a new global gate',async t=>{const h=await harness(t,{missing:'context'});assert.equal(await h.handlers.get('tool_call')({toolCallId:'a',toolName:'bash',input:{}},h.ctx),undefined);assert.ok(h.notices.some(n=>n.includes('missing OMP contract')));});
+test('existing Kubernetes deny remains effective; runtime never returns an allow override',async t=>{const h=await harness(t);const event={toolCallId:'k',toolName:'bash',input:{command:'kubectl apply -f deployment.yaml'}};const runtimeResult=await h.handlers.get('tool_call')(event,h.ctx);const existingPolicy={block:true,reason:'Existing Kubernetes policy requires target approval'};assert.equal(runtimeResult,undefined);const combined=[runtimeResult,existingPolicy].find(r=>r?.block);assert.equal(combined,existingPolicy);});
+test('lease loss and reattachment use existing timer without human interaction',async t=>{const h=await harness(t);const j=await Journal.open(databasePath(h.runtimeDir,h.root));j.db.prepare('UPDATE sessions SET expires=0').run();j.close();const timer=[...h.timers][0];await timer();assert.equal((await h.status()).health,'degraded');assert.equal(await h.dispatch('r','read',{path:'a.txt'}),undefined);await timer();assert.equal((await h.status()).health,'healthy');});
+test('operator pause remains authoritative; automatic recovery never clears it',async t=>{const h=await harness(t);await h.commands.get('runtime').handler('pause',h.ctx);assert.equal(h.ctx.aborted,true);assert.equal((await h.dispatch('b','bash',{command:'true'})).block,true);assert.equal(await h.dispatch('r','read',{path:'a.txt'}),undefined);await h.commands.get('runtime').handler('resume',h.ctx);assert.equal(await h.dispatch('b2','bash',{command:'true'}),undefined);});
+test('compaction makes a recovery card for one model round, not every stored turn',async t=>{const h=await harness(t);await h.tools.get('runtime_checkpoint').execute('cp',{summary:'implemented X',nextAction:'run tests'},undefined,undefined,h.ctx);const state=()=>JSON.parse(h.handlers.get('context')({messages:[]},h.ctx).messages[0].content);assert.equal(state().resume,undefined);h.handlers.get('session_compact')({},h.ctx);assert.equal(state().resume.checkpoint.summary,'implemented X');h.handlers.get('turn_end')({},h.ctx);assert.equal(state().resume,undefined);});

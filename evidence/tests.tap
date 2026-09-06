@@ -1,0 +1,326 @@
+TAP version 13
+# (node:881) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: extension registers only existing responsibilities and no loop or approval hook
+ok 1 - extension registers only existing responsibilities and no loop or approval hook
+  ---
+  duration_ms: 7.958903
+  type: 'test'
+  ...
+# Subtest: normal headless development works without an interactive prompt
+ok 2 - normal headless development works without an interactive prompt
+  ---
+  duration_ms: 6.178834
+  type: 'test'
+  ...
+# Subtest: context callback does not mutate native input or grow old runtime messages
+ok 3 - context callback does not mutate native input or grow old runtime messages
+  ---
+  duration_ms: 4.187066
+  type: 'test'
+  ...
+# Subtest: context contract failure disables only this extension, without a new global gate
+ok 4 - context contract failure disables only this extension, without a new global gate
+  ---
+  duration_ms: 1.706398
+  type: 'test'
+  ...
+# Subtest: existing Kubernetes deny remains effective; runtime never returns an allow override
+ok 5 - existing Kubernetes deny remains effective; runtime never returns an allow override
+  ---
+  duration_ms: 3.774853
+  type: 'test'
+  ...
+# Subtest: lease loss and reattachment use existing timer without human interaction
+ok 6 - lease loss and reattachment use existing timer without human interaction
+  ---
+  duration_ms: 5.461741
+  type: 'test'
+  ...
+# Subtest: operator pause remains authoritative; automatic recovery never clears it
+ok 7 - operator pause remains authoritative; automatic recovery never clears it
+  ---
+  duration_ms: 5.669986
+  type: 'test'
+  ...
+# Subtest: compaction makes a recovery card for one model round, not every stored turn
+ok 8 - compaction makes a recovery card for one model round, not every stored turn
+  ---
+  duration_ms: 2.984779
+  type: 'test'
+  ...
+# Subtest: installation defaults to a read-only plan
+ok 9 - installation defaults to a read-only plan
+  ---
+  duration_ms: 44.624114
+  type: 'test'
+  ...
+# Subtest: explicit activation and rollback preserve config and use only one extension link
+ok 10 - explicit activation and rollback preserve config and use only one extension link
+  ---
+  duration_ms: 103.878489
+  type: 'test'
+  ...
+# Subtest: a foreign regular file at the extension target is never overwritten
+ok 11 - a foreign regular file at the extension target is never overwritten
+  ---
+  duration_ms: 32.242429
+  type: 'test'
+  ...
+# Subtest: a different extension package is never replaced
+ok 12 - a different extension package is never replaced
+  ---
+  duration_ms: 31.56122
+  type: 'test'
+  ...
+# (node:888) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ordinary coherent tool cycle has one durable action
+ok 13 - ordinary coherent tool cycle has one durable action
+  ---
+  duration_ms: 6.877029
+  type: 'test'
+  ...
+# Subtest: zvec input is unchanged and never consumes an effect
+ok 14 - zvec input is unchanged and never consumes an effect
+  ---
+  duration_ms: 2.858038
+  type: 'test'
+  ...
+# Subtest: zvec failure is an observed read failure, not an uncertain write
+ok 15 - zvec failure is an observed read failure, not an uncertain write
+  ---
+  duration_ms: 3.36306
+  type: 'test'
+  ...
+# Subtest: memory response with protocol error despite isError=false is unknown
+ok 16 - memory response with protocol error despite isError=false is unknown
+  ---
+  duration_ms: 2.933742
+  type: 'test'
+  ...
+# Subtest: opaque memory success without a protocol acknowledgement stays unknown
+ok 17 - opaque memory success without a protocol acknowledgement stays unknown
+  ---
+  duration_ms: 2.737496
+  type: 'test'
+  ...
+# Subtest: valid remember acknowledgement settles as observed success
+ok 18 - valid remember acknowledgement settles as observed success
+  ---
+  duration_ms: 2.644655
+  type: 'test'
+  ...
+# Subtest: success then failure never remains succeeded
+ok 19 - success then failure never remains succeeded
+  ---
+  duration_ms: 3.557734
+  type: 'test'
+  ...
+# Subtest: failure then success stays failed with conflict metadata
+ok 20 - failure then success stays failed with conflict metadata
+  ---
+  duration_ms: 2.385383
+  type: 'test'
+  ...
+# Subtest: exit-code-only result divergence is detected
+ok 21 - exit-code-only result divergence is detected
+  ---
+  duration_ms: 2.519997
+  type: 'test'
+  ...
+# Subtest: memory late failure produces unknown rather than retryable failed
+ok 22 - memory late failure produces unknown rather than retryable failed
+  ---
+  duration_ms: 2.333195
+  type: 'test'
+  ...
+# Subtest: result-only call is explicit observation quality, not assumed start/end coverage
+ok 23 - result-only call is explicit observation quality, not assumed start/end coverage
+  ---
+  duration_ms: 1.806088
+  type: 'test'
+  ...
+# Subtest: xd outer plus inner has one logical effect and two physical calls
+ok 24 - xd outer plus inner has one logical effect and two physical calls
+  ---
+  duration_ms: 2.582761
+  type: 'test'
+  ...
+# Subtest: xd outer plus inner timeout produces only one unknown
+ok 25 - xd outer plus inner timeout produces only one unknown
+  ---
+  duration_ms: 2.797046
+  type: 'test'
+  ...
+# Subtest: different ids with identical memory inputs are not wrongly deduplicated
+ok 26 - different ids with identical memory inputs are not wrongly deduplicated
+  ---
+  duration_ms: 2.667781
+  type: 'test'
+  ...
+# Subtest: exact duplicate dispatch is refused and reason is durable
+ok 27 - exact duplicate dispatch is refused and reason is durable
+  ---
+  duration_ms: 3.439045
+  type: 'test'
+  ...
+# Subtest: an actual input revision is uncertain, never silently recertified
+ok 28 - an actual input revision is uncertain, never silently recertified
+  ---
+  duration_ms: 2.049326
+  type: 'test'
+  ...
+# Subtest: memory unknown does not block source work
+ok 29 - memory unknown does not block source work
+  ---
+  duration_ms: 2.81382
+  type: 'test'
+  ...
+# Subtest: control plane never gates, including hub/yield/reconcile
+ok 30 - control plane never gates, including hub/yield/reconcile
+  ---
+  duration_ms: 2.121816
+  type: 'test'
+  ...
+# Subtest: persistent I/O failure stops DB attempts, not native source work
+ok 31 - persistent I/O failure stops DB attempts, not native source work
+  ---
+  duration_ms: 1.784847
+  type: 'test'
+  ...
+# Subtest: lost lease degrades the observer and leaves source reads available
+ok 32 - lost lease degrades the observer and leaves source reads available
+  ---
+  duration_ms: 1.577543
+  type: 'test'
+  ...
+# Subtest: read-back and nonempty attestation resolve only explicit unknown ids
+ok 33 - read-back and nonempty attestation resolve only explicit unknown ids
+  ---
+  duration_ms: 3.979802
+  type: 'test'
+  ...
+# Subtest: an unrelated filesystem read cannot satisfy a memory read-back reference
+ok 34 - an unrelated filesystem read cannot satisfy a memory read-back reference
+  ---
+  duration_ms: 2.477563
+  type: 'test'
+  ...
+# Subtest: a read before a write in the same clock tick is not a read-back
+ok 35 - a read before a write in the same clock tick is not a read-back
+  ---
+  duration_ms: 2.479726
+  type: 'test'
+  ...
+# Subtest: secrets are refused without an approval dialog
+ok 36 - secrets are refused without an approval dialog
+  ---
+  duration_ms: 1.506426
+  type: 'test'
+  ...
+# Subtest: optional evidence is checked only when explicitly cited
+ok 37 - optional evidence is checked only when explicitly cited
+  ---
+  duration_ms: 3.472876
+  type: 'test'
+  ...
+# Subtest: checkpoint needs no evidence collection ceremony
+ok 38 - checkpoint needs no evidence collection ceremony
+  ---
+  duration_ms: 1.683223
+  type: 'test'
+  ...
+# Subtest: context stays one bounded projection over a thousand request builds
+ok 39 - context stays one bounded projection over a thousand request builds
+  ---
+  duration_ms: 3.80603
+  type: 'test'
+  ...
+# Subtest: steady context contains no usage, goal mirror, full logs or unchanged checkpoint
+ok 40 - steady context contains no usage, goal mirror, full logs or unchanged checkpoint
+  ---
+  duration_ms: 1.52291
+  type: 'test'
+  ...
+# Subtest: resume is output packed, not an execution limit
+ok 41 - resume is output packed, not an execution limit
+  ---
+  duration_ms: 2.027794
+  type: 'test'
+  ...
+# Subtest: retired budget and recall options are ignored, never block loading
+ok 42 - retired budget and recall options are ignored, never block loading
+  ---
+  duration_ms: 0.209457
+  type: 'test'
+  ...
+# Subtest: more than old call/effect limits and a day of active lease never stop work
+ok 43 - more than old call/effect limits and a day of active lease never stop work
+  ---
+  duration_ms: 379.329863
+  type: 'test'
+  ...
+# Subtest: resolved journal directory cannot be symlinked into workspace
+ok 44 - resolved journal directory cannot be symlinked into workspace
+  ---
+  duration_ms: 2.273134
+  type: 'test'
+  ...
+# Subtest: same session second writer is rejected, sibling session is allowed
+ok 45 - same session second writer is rejected, sibling session is allowed
+  ---
+  duration_ms: 1.717494
+  type: 'test'
+  ...
+# Subtest: reopening old schema preserves nonempty legacy outbox
+ok 46 - reopening old schema preserves nonempty legacy outbox
+  ---
+  duration_ms: 2.110769
+  type: 'test'
+  ...
+# Subtest: unsupported schema is not reset or destroyed
+ok 47 - unsupported schema is not reset or destroyed
+  ---
+  duration_ms: 1.947382
+  type: 'test'
+  ...
+# Subtest: crash recovery marks unfinished effects unknown without replaying them
+ok 48 - crash recovery marks unfinished effects unknown without replaying them
+  ---
+  duration_ms: 1.851177
+  type: 'test'
+  ...
+# Subtest: an unresolved local command is advisory and does not lock the entire workspace
+ok 49 - an unresolved local command is advisory and does not lock the entire workspace
+  ---
+  duration_ms: 3.053633
+  type: 'test'
+  ...
+# Subtest: a failed final persistence is visible as uncertainty before reattach
+ok 50 - a failed final persistence is visible as uncertainty before reattach
+  ---
+  duration_ms: 1.67474
+  type: 'test'
+  ...
+# Subtest: a failed nested memory alias does not dispatch the actual write without a journal
+ok 51 - a failed nested memory alias does not dispatch the actual write without a journal
+  ---
+  duration_ms: 1.907642
+  type: 'test'
+  ...
+# Subtest: a repeated memory result cannot erase an earlier ambiguous response
+ok 52 - a repeated memory result cannot erase an earlier ambiguous response
+  ---
+  duration_ms: 1.977788
+  type: 'test'
+  ...
+1..52
+# tests 52
+# suites 0
+# pass 52
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 554.598927

@@ -1,8 +1,6 @@
 node_modules/
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
-.env
-.env.*
-.zvec-grep/
+*.sqlite*
+*.tmp
 .DS_Store
+.zvec-grep/
+tmp/

@@ -1,51 +1,19 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync,mkdirSync,writeFileSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RuntimeStore } from '../src/store.mjs';
-import { RuntimeKernel } from '../src/kernel.mjs';
-import { captureEvidence } from '../src/evidence.mjs';
-import { digest } from '../src/util.mjs';
-
-export async function fixture(t, { config = {}, confirm = async () => true, hasUI = true, session = 'session' } = {}) {
-  const base = mkdtempSync(join(tmpdir(), 'omp-runtime-test-'));
-  const root = join(base, 'workspace'); mkdirSync(root);
-  writeFileSync(join(root, 'source.txt'), 'first\nsecond\nthird\n');
-  const dbPath = join(base, 'state', 'state.sqlite');
-  let clock = 100000;
-  const now = () => clock;
-  const store = await RuntimeStore.open(dbPath, { now });
-  const workspace = store.workspace(root);
-  const lease = store.acquire(workspace.id, session, { hasUI });
-  const kernel = new RuntimeKernel({ store, lease, root, config, confirm });
-  const stores = [store];
-  t.after(() => { for (const s of stores) { try { s.close(); } catch {} } rmSync(base, { recursive: true, force: true }); });
-  return {
-    base, root, dbPath, store, lease, workspace, kernel, stores, now,
-    advance: ms => { clock += ms; },
-    /** Time passes so every lease without a heartbeat lapses, while this fixture's own session keeps beating. */
-    lapse() { clock += 20000; store.heartbeat(lease); clock += 20000; },
-    /** A second OMP process on the same working tree: its own connection, session and lease. */
-    async sibling(id, options = {}) {
-      const s = await RuntimeStore.open(dbPath, { now }); stores.push(s);
-      const l = s.acquire(workspace.id, id, options);
-      return { store: s, lease: l, kernel: new RuntimeKernel({ store: s, lease: l, root, config: options.config ?? config, confirm }) };
-    },
-    evidence: () => store.saveEvidence(lease, captureEvidence(root, 'source.txt', 1, 2)),
-  };
+import { Journal } from '../src/journal.mjs';
+import { Runtime } from '../src/kernel.mjs';
+export async function fixture(t, options={}){
+  const dir=mkdtempSync(join(tmpdir(),'runtime-v3-')),root=join(dir,'work');mkdirSync(root);writeFileSync(join(root,'a.txt'),'one\ntwo\n');
+  let clock=1000000;const log=[];const journal=await Journal.open(join(dir,'journal.sqlite'),()=>clock);
+  const ws=journal.workspace(root),lease=journal.acquire(ws,'session',options.hasUI??true);
+  const rt=new Runtime({journal,lease,root,session:'session',options:options.config??{},log:m=>log.push(m)});
+  t.after(()=>{rt.close();try{journal.close();}catch{}rmSync(dir,{recursive:true,force:true});});
+  return {dir,root,journal,lease,rt,ws,log,advance:n=>{clock+=n;},get now(){return clock;}};
 }
-export function call(overrides = {}) {
-  return { toolCallId: 'call-1', toolName: 'bash', input: { command: 'printf ok' }, hasUI: true, ...overrides };
-}
-/** Drive one tool through the whole event sequence OMP emits for a model-issued call. */
-export async function run(kernel, c, { isError = false, exitCode = 0, args, text = 'ok' } = {}) {
-  const intent = await kernel.intent(c);
-  if (intent?.block) return intent;
-  kernel.revise(c.toolCallId, c.toolName, args ?? c.input);
-  const result = { content: [{ type: 'text', text }], details: { exitCode } };
-  kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'result' });
-  kernel.settle(c.toolCallId, c.toolName, { result, isError, phase: 'end' });
-  return intent;
-}
-export const code = expected => error => error?.code === expected;
-/** The journal row a kernel wrote for a call (action ids are derived, not random). */
-export const action = (f, c, kernel = f.kernel) => f.store.action(digest({ session: kernel.lease.session, tool: c.toolName, toolCallId: c.toolCallId }));
+export const call=(id,tool='bash',input={command:'true'})=>({toolCallId:id,toolName:tool,input});
+export const ok={content:[{type:'text',text:'ok'}],details:{exitCode:0}};
+export const memoryOK={content:[{type:'text',text:JSON.stringify({protocol_version:1,id:'41',status:'inserted'})}]};
+export const memoryRead={content:[{type:'text',text:JSON.stringify({protocol_version:1,total:1,facts:[{fact_id:'41',fact:'hello'}]})}]};
+export function run(rt,c,result=ok,isError=false){const blocked=rt.intent(c);if(blocked)return blocked;rt.start(c);rt.result(c,result,isError);rt.result(c,result,isError,'end');return undefined;}
+export function action(f,tool,id){return f.journal.db.prepare('SELECT * FROM actions WHERE tool=? ORDER BY rowid DESC LIMIT 1').get(tool);}

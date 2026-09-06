@@ -21,20 +21,6 @@ export function boundedText(value, max = 8000) {
 }
 export function rejectObviousSecrets(value) {
   const text = typeof value === 'string' ? value : stable(value);
-  // A hygiene check, not a DLP guarantee. Operator review remains mandatory.
+  // A hygiene check, not a DLP guarantee. This check does not add an approval workflow.
   check(!/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})\b|\bBearer\s+[A-Za-z0-9._~+\/-]{12,})/i.test(text), 'POSSIBLE_SECRET');
-}
-export function withDeadline(signal, milliseconds) {
-  return signal ? AbortSignal.any([signal, AbortSignal.timeout(milliseconds)]) : AbortSignal.timeout(milliseconds);
-}
-
-export async function abortable(fn, signal) {
-  signal?.throwIfAborted();
-  let onAbort;
-  const cancellation = new Promise((_, reject) => {
-    onAbort = () => reject(signal.reason ?? new Error('ABORTED'));
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-  try { return await Promise.race([Promise.resolve().then(fn), cancellation]); }
-  finally { signal?.removeEventListener('abort', onAbort); }
 }

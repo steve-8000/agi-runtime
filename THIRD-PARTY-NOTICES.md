@@ -1,9 +1,5 @@
-# Third-party source references
+# Source attribution
 
-This package contains newly authored integration code that runs as an OMP extension, a minimal TypeScript declaration of the OMP extension surface it depends on (`types/pi-coding-agent.d.ts`, transcribed from upstream source at the pinned tag). It does not patch, vendor or redistribute upstream repositories or binaries.
+This implementation is a replacement candidate for steve-8000/agi-runtime, reviewed at 580f0e52b67769acc3642053f167eaaf60d2c7ad. The dual Node/Bun SQLite adapter and evidence/util primitives derive from that MIT-licensed project. Its license notice is preserved in LICENSE.
 
-- can1357/oh-my-pi: MIT, pinned in source-pins.json.
-- zvec-ai/zvec-grep: Apache-2.0, pinned in source-pins.json.
-- garrytan/gbrain: MIT, pinned in source-pins.json.
-
-No AGI, certification, security audit or production-readiness endorsement is implied by an upstream license.
+The OMP, zvec-grep and gbrain implementations are not vendored. Their documented public contracts were consulted. This package neither replaces their license notices nor redistributes their binaries, models or credentials. See docs/SOURCE-AUDIT.md for exact source versions and distinctions between upstream facts and this package's design choices.

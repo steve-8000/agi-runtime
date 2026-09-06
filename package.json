@@ -1,37 +1,27 @@
 {
   "name": "@clab/omp-agi-runtime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "AGI runtime for OMP as a persistent extension layer: journal, recovery, evidence receipts, canonical-memory gates. Zero core patches.",
+  "description": "OMP-native engineering runtime: bounded request context, optional journal and autonomous read-back recovery. No work budgets or recall gates.",
+  "license": "MIT",
   "engines": {
-    "node": ">=22.16.0",
-    "bun": ">=1.3.14"
+    "node": ">=22.16.0"
   },
   "omp": {
     "extensions": [
-      "./extension/index.ts"
+      "./extension/index.mjs"
     ]
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "typecheck": "tsc -p .",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "measure": "node scripts/measure.mjs",
     "install-extension": "node scripts/install.mjs",
-    "compat": "node --experimental-strip-types scripts/compat.mjs",
-    "doctor": "node scripts/doctor.mjs",
-    "check": "node scripts/check.mjs"
+    "upgrade-check": "node scripts/upgrade-check.mjs",
+    "install-ompupdate-alias": "node scripts/install-ompupdate-alias.mjs"
   },
   "exports": {
-    ".": "./src/kernel.mjs",
-    "./memory": "./src/memory.mjs",
-    "./store": "./src/store.mjs"
-  },
-  "devDependencies": {
-    "@types/node": "^26.4.1"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/steve-8000/agi-runtime.git"
+    ".": "./src/kernel.mjs"
   }
 }

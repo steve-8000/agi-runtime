@@ -1,52 +1,58 @@
-# 소스 근거
+# 소스 근거와 설계 판단
 
-검토일: 2026-09-05. 설치본은 Homebrew `omp/18.1.10`(컴파일 바이너리, `/opt/homebrew/Cellar/omp/18.1.10/bin/omp`, formula는 GitHub release 자산). 소스는 태그 `v18.1.10` = `f241301c83726afe75a847e919b89977a54dafbe`에서 파일 단위로 읽었다. 전체 clone·빌드는 하지 않았다.
+기준일 2026-09-06. GitHub connector로 버전/파일/commit을 읽었다. 전체 repository clone이나 실제 Mac 설치 검증을 수행했다고 주장하지 않는다. 아래 링크는 source reference이며 런타임에서 네트워크로 호출하는 dependency가 아니다.
 
-## OMP 확장 계약 (v18.1.10)
+## 고정 근거
 
-| 파일 | 확인한 내용 | 반영 |
+| 대상 | 기준 | 확인 내용 |
 |---|---|---|
-| `packages/coding-agent/src/extensibility/extensions/wrapper.ts` L184-250, 348-417 | `tool_call`은 agent loop가 arg-prep 시점에 emit하고 wrapper는 loop가 보지 못한 디스패치(중첩 `xd://`, 직접 실행)에서만 emit. 승인 게이트는 수정된 `effectiveParams`에 대해 resolve. `tool.execute` 예외는 `isError:true` 결과로 변환되어 `tool_result`로 전달. `tool_result` 핸들러는 확장 순서로 실행되며 이전 수정을 본다 | 커널 `intent/settle` 매핑. throw와 isError를 구분하지 않음 |
-| `extensibility/extensions/types.ts` L795-820 | `ToolExecutionStartEvent{toolCallId,toolName,args}`, `ToolExecutionEndEvent{toolCallId,toolName,result,isError}` | `revise`, 최종 `settle` |
-| `extensibility/shared-events.ts` L310-345 | `ToolCallEventResult{block,reason,input}`: 여러 핸들러가 `input`을 주면 마지막이 이기고 서로의 수정을 보지 못함; `computer`에는 미적용 | `tool_execution_start.args`로 실제 입력 재확인 |
-| `types.ts` L455-523 | `ExtensionContext`: `ui, hasUI, cwd, sessionManager, abort, setInterval/setTimeout/clearTimer, invokeTool?` | probe 대상 멤버 |
-| `types.ts` L1218-1230 | `ExtensionAPI.pi: typeof PiCodingAgent`, `zod`, `logger` | `pi.pi.VERSION`, `pi.pi.getAgentDir()` |
-| `packages/coding-agent/src/index.ts` L10 | `export { getAgentDir, logger, VERSION } from "@oh-my-pi/pi-utils"` | 버전·agent dir 획득 |
-| `omp://extension-loading.md` | user root `~/.omp/agent/extensions`, 한 단계 스캔, 디렉터리의 `package.json#omp.extensions`, symlink 허용, `?mtime` 캐시 버스터가 상대 import 그래프에 전파 | symlink 설치, `.mjs` 소스 relative import |
-| `omp://extensions.md` | `ctx.setInterval` 격리 타이머; `tool_result` middleware; 서브에이전트는 자체 확장을 로드하지 않음(파일 fallback 절) | 하트비트, 정책 범위 |
-| `types.ts` L692-698 | `ToolInfo{name,description,parameters,promptGuidelines,sourceInfo}` — 승인 tier 없음 | 이름 표 기반 분류 |
+| steve-8000/agi-runtime | 580f0e52b67769acc3642053f167eaaf60d2c7ad | main ref, 최신 수정 diff, source-pins, evidence primitive, 기존 설계/검토 이력 |
+| can1357/oh-my-pi | v18.1.11 | 최신 release 확인, extension event/public API, custom message/session 저장, CLI args |
+| zvec-ai/zvec-grep | 52653951b24617762f4ab0c71c34d594e5001617 | 최신 commit, MCP search/freshness 계약(기존 source 검토 포함) |
+| garrytan/gbrain | 8c70f6255047a7647adb30b1d6333a48068d9fa5 | 최신 commit, MEMORY_VERBS v1 문서, src/core/verbs.ts 실제 입력 계약 |
+| clab-one/gbrain-server | 조회 시 deploy/gbrain.yaml | gbrain.clab.one과 verbs surface, 기존 로컬 모델 경로. 실제 pod 상태는 미검증 |
 
-### 라이브에서만 확인된 사실
+## OMP: 구현에 직접 반영한 사실
 
-`omp -p … -e extension/index.ts`(OMP_RUNTIME_REQUIRED=1)에서 모델이 `write({path:"xd://runtime_status"})`를 호출했다. 관측: `intents 4 / starts 3 / results 4 / ends 3`. 중첩 디스패치는 외부와 **같은 toolCallId**, 다른 toolName, 자체 `tool_execution_start/end` 없음. 초기 구현(toolCallId 키)은 외부 `write` 행을 `executing`으로 남겼다. 키를 `(toolCallId, toolName)`으로 바꾸고 `tests/kernel.test.mjs`에 회귀를 남겼다. 수정 후 재실행: 네 행 모두 `succeeded`.
+- https://github.com/can1357/oh-my-pi/blob/v18.1.11/docs/extensions.md
+- https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/session/messages.ts
+- https://github.com/can1357/oh-my-pi/blob/v18.1.11/docs/session.md
+- https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/cli/args.ts
 
-## gbrain (정본 메모리)
+Public context handler는 provider용 messages의 detached copy를 다룬다. 그래서 자체 projection만 요청 단위로 교체한다. Native transcript를 반복 수정하거나 provider payload 전체를 가로채지 않는다.
 
-`~/.omp/agent/mcp.json`: 서버 `gbrain` = `https://gbrain.clab.one/mcp`(Streamable HTTP, bearer는 0600 파일에서 읽는 헤더 명령). OMP는 MCP 도구를 `mcp__<server>_<tool>`로 노출하므로 라우트는 `mcp__gbrain_*`다.
+tool_result는 extension 순서대로 수정될 수 있다. 원시 결과 보장을 버리고 ‘이 extension이 관측한 결과’로 명명했다. start/end 없는 호출을 같은 수준의 입력검증으로 간주하지 않는다.
 
-서버가 노출하는 표면은 메모리 verb 7개다: `recall`, `entity`, `context_pack`, `delta`, `synthesize`(읽기), `remember`, `forget`(쓰기). `remember`는 사실 하나에 `provenance`를 필수로 받고 `{id, status}`(`inserted|duplicate|superseded`)를 돌려준다. 중복 판정은 임베딩 유사도이고 **서버가 강제하는 멱등 키는 없다** — 같은 사실을 다른 문구로 다시 쓰면 두 번 들어갈 수 있다. 그래서 이 런타임은 결과 본문으로 저널 상태를 바꾸지 않고, 오류를 `unknown`으로 두고 read-back attestation만 해소로 인정한다.
+getAllTools/getActiveTools는 공식 API에 존재한다. 그러나 실제 노출/활성/동적 discovery는 호스트 상태와 다르므로 이 패키지는 ‘도구가 연결됐다’를 config 문자열만으로 보증하지 않는다. 실제 OMP 적용에서는 해당 API와 현재 tools/list를 조회한다.
 
-`forget(id)`는 멱등이며 만료 이력을 남긴다. `recall`은 질의로 코퍼스를 조망하고 `entity`/`context_pack`은 아는 대상을 답한다 — 게이트가 이 구분을 쓴다(조망만 하고 아무 것도 읽지 않으면 `recall.shallow`).
+invokeTool은 same-name native builtin delegation이다. arbitrary MCP를 부르는 별도 bridge로 사용하지 않는다. managed timer는 수명과 오류 처리를 OMP에 맡긴다. session_stop/triggerTurn/sendUserMessage continuation은 사용하지 않는다.
 
-읽기·쓰기 목록은 config에서 정확한 이름으로만 분류한다. 한 이름이 두 목록에 동시에 있으면 attach가 거절된다(`INVALID_TOOL_ALLOWLIST`): 두 부류의 게이트가 다르기 때문이다.
+Custom session record에는 type:title 슬롯이 앞설 수 있고 parentSession은 타입이 고정된 foreign key가 아니다. 그래서 임의 JSONL 위치나 parent ID를 추측하는 process supervisor를 만들지 않았다.
 
-## zvec-grep
+## gbrain: 결과 계약과 안전성의 구분
 
-`~/.omp/agent/mcp.json`: 서버 `zvec-grep` = `zg server --stdio`. 도구 이름 `mcp__zvec_grep_search`. MCP 서버 지침(시스템 프롬프트): `query/queries/fts/vector`, `fuse`, 절대 `root`, index 생성은 사용자 승인 필요. 커널은 입력을 **수정하지 않는다** — `limit`, `autoUpdate`, `hidden/noIgnore/follow`, query group 수, `root`(`--add-dir` 같은 정당한 다중 root 포함)는 모두 모델이 보낸 그대로 실행되고 `READ_TOOLS`의 read로 저널에만 남는다. freshness·update·query semantics는 zvec 서버 지침이 담당한다. 이전 pin(`52653951`) 검토 내용은 유지된다.
+- https://github.com/garrytan/gbrain/blob/8c70f6255047a7647adb30b1d6333a48068d9fa5/docs/protocol/MEMORY_VERBS_v1.md
+- https://github.com/garrytan/gbrain/blob/8c70f6255047a7647adb30b1d6333a48068d9fa5/src/core/verbs.ts
 
-## 첨부 설정 검토
+MEMORY_VERBS v1은 additive 확장을 허용하는 명시적 계약이다. context_pack/delta는 이미 존재하므로 새 memory aggregator를 만들지 않는다. context_pack.entities는 comma-separated string이다. recall/entity와 달리 synthesize는 별도 LLM을 호출할 수 있으므로 hot path 기본 호출로 두지 않는다.
 
-`~/.omp/agent/config.yml`(2026-09-05): `tools.approvalMode: yolo`, `memory.backend: off`, `autolearn` off, `task.disabledAgents: [librarian, sonic, task, security-reviewer]`, 모델 역할 Opus default/plan, Luna scout/advisor/smol, Grok reviewer. 이 계층은 어느 것도 바꾸지 않는다. 원본 파일은 공개 저장소에 포함하지 않는다.
+중요한 정정: `remember` 실제 코드에는 `annotations.idempotentHint: true`가 있다. 따라서 ‘서버에 어떠한 dedup도 없다’는 설명은 틀리다. 문서는 similarity 기반 dedup/supersession과 embedding 부재 시 degraded_dedup도 설명한다. 이것은 요청 ID의 영속 uniqueness/exactly-once 계약과 동일하지 않다. 이번 구현은 unknown remember를 재전송하지 않는 보수적인 정책을 사용한다.
 
-`~/.omp/agent/extensions/kubernetes-approval.ts`: 실행 도구만 검사, clab-cluster 명시 시 면제, headless 차단, 작업당 1회 승인. 이 계층의 `headlessEffects` 기본은 이 확장이 k8s를 이미 fail-closed 한다는 사실에 기댄다.
+`forget`은 opaque fact ID 기준 idempotent로 문서화되어 있다. 이번 reducer는 write 오류를 일관되게 unknown 처리하므로 forget도 read-back을 요구할 수 있다. 정확한 ID retry를 별도 최적화하지 않은 의도적인 단순화이며 서버의 idempotency가 없다는 주장은 하지 않는다.
 
-## 원본 링크
+protocol_version/status/error 등의 유효한 응답은 구조화된 관측으로 처리한다. 성공 응답이 암호학적 영수증이거나 middleware 영향이 없는 원본이라고 가정하지 않는다. 모델이 받은 memory text를 새 instruction으로 실행하지 않는다.
 
-```text
-https://github.com/can1357/oh-my-pi/tree/v18.1.10
-https://raw.githubusercontent.com/can1357/oh-my-pi/v18.1.10/packages/coding-agent/src/extensibility/extensions/wrapper.ts
-https://raw.githubusercontent.com/can1357/oh-my-pi/v18.1.10/packages/coding-agent/src/extensibility/extensions/types.ts
-https://raw.githubusercontent.com/can1357/oh-my-pi/v18.1.10/packages/coding-agent/src/extensibility/shared-events.ts
-https://raw.githubusercontent.com/can1357/oh-my-pi/v18.1.10/packages/coding-agent/src/index.ts
-https://github.com/can1357/oh-my-pi/releases/download/v18.1.10/omp-darwin-arm64   (sha256 f93613f5…, formula)
-```
+`budget_tokens`는 반환 콘텐츠 packing을 위한 인자다. 실행 시간/호출 수 quota 제거와 충돌하지 않는다. private/world는 gbrain의 인증/scope 조건을 따르며 entity 슬러그를 ACL로 착각하지 않는다.
+
+## zvec
+
+- https://github.com/zvec-ai/zvec-grep/blob/52653951b24617762f4ab0c71c34d594e5001617/docs/03-mcp.md
+- https://github.com/zvec-ai/zvec-grep/blob/52653951b24617762f4ab0c71c34d594e5001617/src/mcp/schemas.ts
+
+검색 호출은 논리적 read지만 인덱스 갱신이나 embedding 비용까지 없는 것은 아니다. freshness/auth/model 선택은 zvec가 소유한다. runtime은 요청 인자를 수정하지 않는다. 제공되는 실제 schema가 권위이며 aliases/MCP server 이름이 바뀌면 identity 목록만 변경한다.
+
+## 설계 판단인 것
+
+local unknown을 workspace 전체 차단으로 바꾸지 않는 것, known memory unknown만 쓰기 보류하는 것, request-only 4 KiB projection, optional short checkpoints, 새 dependency 없이 SQLite adapter를 재사용하는 것은 이 패키지의 판단이다. upstream이 보장하거나 모든 workload에서 최적이라고 발표한 내용이 아니다.
+
+Kubernetes 정책은 사용자가 제공한 AGENTS의 read-only, clab-cluster 예외, other-target approval, headless/subagent deny를 유지한다. 실제 Kubernetes hook 소스/배포는 미검증이다.
