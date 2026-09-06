@@ -17,7 +17,8 @@ test('the ompupdate installer is a fixed point and its removal restores the orig
   const dir = mkdtempSync(join(tmpdir(), 'ompupdate-rc-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const rc = join(dir, '.zshrc');
-  const original = 'export PATH="$HOME/bin:$PATH"\n\n# other tool\nalias x=y\n';
+  // Trailing whitespace on the operator's own last line must survive: this installer manages one block, not the file.
+  const original = 'export PATH="$HOME/bin:$PATH"\n\n# other tool\nalias x=y   \n';
   writeFileSync(rc, original);
   const install = (...args) => {
     const r = spawnSync(process.execPath, [join(root, 'scripts/install-ompupdate-alias.mjs'), '--rc', rc, ...args], { encoding: 'utf8' });

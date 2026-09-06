@@ -59,10 +59,11 @@ if ((start === -1) !== (stop === -1)) {
 // Normalize once so installing twice is a fixed point: the block always sits at the
 // end after exactly one blank line, and removing it leaves the original tail intact.
 const withoutBlock = hadBlock ? text.slice(0, start) + text.slice(stop + END.length) : text;
-const body = withoutBlock.replace(/\s+$/, '');
-const restoreTail = withoutBlock === body ? '' : '\n';
+// Only trailing newlines are normalized. Whitespace inside the operator's own last
+// line is theirs; stripping it would edit a line this installer does not manage.
+const body = withoutBlock.replace(/\n+$/, '');
 const next = uninstall
-  ? (body === '' ? '' : body + restoreTail)
+  ? (body === '' ? '' : `${body}\n`)
   : (body === '' ? `${block}\n` : `${body}\n\n${block}\n`);
 const changed = next !== text;
 if (changed) writeFileSync(rc, next, { mode: 0o644 });

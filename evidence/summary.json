@@ -1,12 +1,19 @@
 {
-  "status": "local-tests-passed-live-integration-pending",
+  "status": "local-tests-passed-live-attach-verified",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.7.0",
+    "omp": "18.1.11"
+  },
   "tests": {
-    "passed": 52,
+    "passed": 54,
     "failed": 0,
     "real": [
       "SQLite",
       "temporary filesystem",
-      "temporary symlink install/rollback"
+      "temporary symlink install/rollback",
+      "temporary zsh rc file"
     ],
     "mocked": [
       "OMP API and events",
@@ -15,18 +22,15 @@
     ]
   },
   "checks": {
-    "mjs_files": 15,
+    "mjs_files": 17,
     "configuration": "passed"
   },
   "measure": {
-    "node": "v22.16.0",
-    "platform": "linux",
-    "arch": "x64",
     "iterations": 1000,
     "hookCycleMs": {
-      "median": 0.2762180000000001,
-      "p95": 0.5166810000000055,
-      "max": 1.6391270000000304
+      "median": 0.27429200000000264,
+      "p95": 0.5409159999999993,
+      "max": 0.9034999999999513
     },
     "context": {
       "steadyBytes": 317,
@@ -36,12 +40,26 @@
     },
     "scope": "Synthetic hooks and real local SQLite; no real file/tool/provider execution, no Mac benchmark, no model tokens measured; storage cache affects latency"
   },
+  "upgradeGate": {
+    "command": "node scripts/upgrade-check.mjs --live",
+    "status": "PASS",
+    "ompVersion": "18.1.11",
+    "liveAttach": {
+      "journalsCreatedByProbe": 1,
+      "probeReply": "done"
+    },
+    "scope": "one real `omp -p` in a scratch workspace and runtime dir; proves discovery, import and attach under the installed binary"
+  },
   "unchanged": [
-    "remote repository",
-    "user Mac installation",
-    "OMP settings",
+    "OMP settings and updater",
     "Kubernetes policy/hook",
+    "runtime config keys",
+    "MCP credentials",
     "gbrain deployment",
     "zvec index"
+  ],
+  "changedOnThisHost": [
+    "~/.omp/agent/extensions/agi-runtime symlink -> this checkout",
+    "~/.zshrc managed ompupdate block"
   ]
 }

@@ -29,7 +29,7 @@ node scripts/check.mjs
 node scripts/measure.mjs
 ```
 
-Node 22.16 이상과 builtin SQLite를 사용한다. production npm dependency는 없다. 테스트는 52개, 실제 SQLite와 임시 filesystem을 사용하며 OMP/provider는 mock이다. 전체 OMP SDK/Bun/live MCP test를 대신하지 않는다.
+Node 22.16 이상과 builtin SQLite를 사용한다. production npm dependency는 없다. 테스트는 54개, 실제 SQLite와 임시 filesystem을 사용하며 OMP/provider는 mock이다. 전체 OMP SDK/Bun/live MCP test를 대신하지 않는다.
 
 ## 설치 계획과 선택적 활성화
 
@@ -40,6 +40,11 @@ node scripts/install.mjs --rollback            # 이전 symlink 복구
 ```
 
 기존 OMP process를 먼저 종료하고, 유지할 checkout에서 활성화한다. 새 process부터 반영된다. 두 runtime을 병렬 로드하지 않는다. 자세한 검증/backup 절차는 MIGRATION.md에 있다. 이 답변에서 실제 활성화한 것은 아니다.
+
+이 호스트에서는 이미 활성화되어 있고 링크는 이 checkout을 가리킨다. `--rollback`은 동작하지 않는다:
+`~/.omp/runtime/activation.json`의 `candidate`가 활성화 당시의 임시 checkout 경로이고 그 디렉터리는
+cutover에서 삭제됐으므로 installer는 `TARGET_CHANGED_SINCE_ACTIVATION`으로 거부한다(dangling
+symlink를 만들지 않는 fail-closed). 코드 롤백은 git 작업이다 — 이전 구현은 `580f0e5`에 있다.
 
 ## `ompupdate`
 
@@ -55,8 +60,12 @@ node scripts/install-ompupdate-alias.mjs --uninstall
 `scripts/upgrade-check.mjs`가 설치 버전, `check.mjs`, `tests/*.test.mjs`, 그리고 로드되는 확장
 심링크가 이 checkout인지 확인한다. `--live`는 scratch workspace와 scratch runtime 디렉터리에서
 `omp -p`를 한 번 실행해 새 바이너리가 확장을 discover/import/attach 하는지 저널 생성으로 확인한다
-(모델 호출 1회, `OMP_UPDATE_PROBE_MODEL`로 모델 지정). native 업데이트가 실패하면 게이트는 실행되지
-않고 native exit code가 그대로 반환된다. `alias`가 아니라 함수인 이유는 zsh alias가 인자를 확장 끝에만
+(모델 호출 1회, `OMP_UPDATE_PROBE_MODEL`로 모델 지정). `ompupdate`는 업데이트 성공 후 항상 `--live`를
+실행한다: 업데이트가 깨뜨리는 것은 정적 검사가 아니라 확장 로딩과 이벤트 계약이므로 매 업데이트마다
+모델 호출 1회를 쓴다. native 업데이트가 실패하면 게이트는 실행되지 않고 native exit code가 그대로
+반환된다. 업데이트는 성공했으나 게이트가 실패하면 **업데이트는 이미 적용된 상태**로 non-zero를
+반환하고 실패 단계를 알려준다 — 되돌리는 것은 OMP 쪽 작업이다. 게이트만 따로 돌리려면
+`ompupdate --gate-only [--live]`. `alias`가 아니라 함수인 이유는 zsh alias가 인자를 확장 끝에만
 붙여서 `omp update`에 플래그를 넘기며 뒤에 게이트를 실행할 수 없기 때문이다. 이 설치는 `omp` 명령
 자체를 감싸지 않고, OMP·Kubernetes hook·runtime config·MCP 설정을 바꾸지 않는다.
 
