@@ -56,9 +56,14 @@ if ((start === -1) !== (stop === -1)) {
   console.error(`install-ompupdate-alias: ${rc} has an unbalanced managed block; fix it by hand`);
   process.exit(1);
 }
-let next = hadBlock ? text.slice(0, start) + text.slice(stop + END.length) : text;
-next = next.replace(/\n{3,}$/, '\n\n');
-if (!uninstall) next = `${next.endsWith('\n') || next === '' ? next : `${next}\n`}${next.trim() === '' ? '' : '\n'}${block}\n`;
+// Normalize once so installing twice is a fixed point: the block always sits at the
+// end after exactly one blank line, and removing it leaves the original tail intact.
+const withoutBlock = hadBlock ? text.slice(0, start) + text.slice(stop + END.length) : text;
+const body = withoutBlock.replace(/\s+$/, '');
+const restoreTail = withoutBlock === body ? '' : '\n';
+const next = uninstall
+  ? (body === '' ? '' : body + restoreTail)
+  : (body === '' ? `${block}\n` : `${body}\n\n${block}\n`);
 const changed = next !== text;
 if (changed) writeFileSync(rc, next, { mode: 0o644 });
 
