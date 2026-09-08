@@ -6,7 +6,7 @@ import { fixture,call,run,ok,memoryOK,memoryRead } from './helpers.mjs';
 import {config,classify,logicalId,STATE_TYPE} from '../src/contracts.mjs';
 import {projectContext,MAX_CONTEXT_BYTES} from '../src/context.mjs';
 import {Journal,databasePath} from '../src/journal.mjs';
-const remember='mcp__gbrain_remember',recall='mcp__gbrain_recall',zvec='mcp__zvec_grep_search';
+const remember='memory_write',recall='memory_read',zvec='mcp__zvec_grep_search';
 const fact={fact:'Use the native OMP loop',provenance:'test',entity:'projects/demo'};
 const row=(f,c)=>f.journal.row(logicalId('session',c,classify(c,f.rt.config)));
 

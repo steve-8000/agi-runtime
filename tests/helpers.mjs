@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Journal } from '../src/journal.mjs';
 import { Runtime } from '../src/kernel.mjs';
+// The shipped default classifies no memory tool because Sharpshooter exposes none. These
+// generic identities exercise the operator-configured path without naming a vendor.
+export const MEMORY_TOOLS={memoryReadTools:['memory_read'],memoryWriteTools:['memory_write']};
 export async function fixture(t, options={}){
   const dir=mkdtempSync(join(tmpdir(),'runtime-v3-')),root=join(dir,'work');mkdirSync(root);writeFileSync(join(root,'a.txt'),'one\ntwo\n');
   let clock=1000000;const log=[];const journal=await Journal.open(join(dir,'journal.sqlite'),()=>clock);
   const ws=journal.workspace(root),lease=journal.acquire(ws,'session',options.hasUI??true);
-  const rt=new Runtime({journal,lease,root,session:'session',options:options.config??{},log:m=>log.push(m)});
+  const rt=new Runtime({journal,lease,root,session:'session',options:options.config??MEMORY_TOOLS,log:m=>log.push(m)});
   t.after(()=>{rt.close();try{journal.close();}catch{}rmSync(dir,{recursive:true,force:true});});
   return {dir,root,journal,lease,rt,ws,log,advance:n=>{clock+=n;},get now(){return clock;}};
 }

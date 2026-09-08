@@ -4,13 +4,13 @@
   "arch": "arm64",
   "iterations": 1000,
   "hookCycleMs": {
-    "median": 0.27429200000000264,
-    "p95": 0.5409159999999993,
-    "max": 0.9034999999999513
+    "median": 0.33875000000000455,
+    "p95": 0.872333000000026,
+    "max": 5.2778749999999945
   },
   "context": {
-    "steadyBytes": 317,
-    "stressResumeBytes": 2296,
+    "steadyBytes": 539,
+    "stressResumeBytes": 2567,
     "packingBoundBytes": 4096,
     "runtimeMessagesAfter1000Builds": 1
   },

@@ -10,6 +10,9 @@ export class Runtime {
     this.groups = new Map(); this.wires = new Map(); this.uncertain = new Map();
     this.resume = !!lease && lease.epoch > 1; this.checkpointValue = null;
     this.operatorPaused=false;
+    // Sharpshooter observation, refreshed by the extension timer. Null means "not observed",
+    // never "no decisions": the runtime must not claim anything about memory it did not read.
+    this.decisionMemory=null;
     if (journal) this.db(() => {
       this.refreshUnknown(); this.operatorPaused=journal.paused(lease.workspace); const row = journal.session(session);
       this.checkpointValue = row?.checkpoint ? JSON.parse(row.checkpoint) : null;
@@ -127,7 +130,7 @@ export class Runtime {
       let ref=null;this.db(()=>{ref=this.journal.source(this.lease.workspace,a.id);});return {...a,ref};
     });
     return {health:this.health,reason:this.reason,paused:this.operatorPaused,session:this.session,unknown,totalUnknown:all.length,
-      nextOffset:offset+12<all.length?offset+12:null,recent,checkpoint:this.checkpointValue,
+      nextOffset:offset+12<all.length?offset+12:null,recent,checkpoint:this.checkpointValue,decisionMemory:this.decisionMemory,
       authority:'observations and agent attestations; not proof of external state'};
   }
   pause(value){this.operatorPaused=value;this.db(()=>this.journal.setPaused(this.lease,value));}

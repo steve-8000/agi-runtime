@@ -1,11 +1,14 @@
 import { check, digest } from './util.mjs';
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 export const STATE_TYPE = 'clab.runtime.state.v3';
 export const OLD_STATE_TYPES = new Set([STATE_TYPE, 'agi-runtime-state']);
+// Sharpshooter writes decision memory itself from user turns and exposes no tool, so the
+// default deployment has no memory call to classify. The lists stay configurable: an
+// operator who mounts a memory MCP still gets secret refusal and unknown-write deferral.
 export const DEFAULTS = Object.freeze({
-  memoryReadTools: ['mcp__gbrain_recall', 'mcp__gbrain_entity', 'mcp__gbrain_context_pack', 'mcp__gbrain_delta', 'mcp__gbrain_synthesize'],
-  memoryWriteTools: ['mcp__gbrain_remember', 'mcp__gbrain_forget'],
+  memoryReadTools: [],
+  memoryWriteTools: [],
   searchTools: ['mcp__zvec_grep_search'],
 });
 export const READ = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'runtime_status', 'runtime_evidence']);

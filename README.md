@@ -1,6 +1,6 @@
-# OMP Native Runtime 0.3
+# OMP Native Runtime 0.4
 
-**판단은 모델에, 검색은 zvec에, 기억은 gbrain에. Runtime은 관측·복구와 작은 context projection만 담당한다.**
+**판단은 모델에, 검색은 zvec에, 결정 기억은 OMP Sharpshooter에. Runtime은 관측·복구와 작은 context projection만 담당한다.**
 
 2026-09-06 작성. `steve-8000/agi-runtime`의 580f0e52를 검토한 뒤 만든 경량 replacement candidate. AGI 달성 주장이나 실제 host 배포 완료본이 아니다.
 
@@ -8,7 +8,7 @@
 
 실행 예산, 회상 강제/strike/skip, runtime 승인 대화상자, memory outbox, note due 압박, 매턴 상태 append를 없앴다. 새 agent, network client, vector DB, scheduler도 없다. generic task worker는 계속 disabled, Main sole writer다.
 
-zvec 입력을 수정하지 않는다. gbrain의 기존 seven verbs를 모델이 직접 사용한다. 불명 memory write는 read-back 전 보류하지만 작업 공간의 코드 개발을 잠그지 않는다. SQLite 오류는 degraded 관측과 timer 재접속으로 처리한다. 결과 충돌과 xd 중첩 호출을 단일 logical action 기준으로 기록한다.
+zvec 입력을 수정하지 않는다. 결정 기억은 OMP의 Sharpshooter backend가 사용자 턴에서 직접 추출·통합하므로 모델이 호출할 memory verb가 없다. Runtime은 그 bank를 `ctx.memory`로 읽기만 한다: compaction 뒤 transcript에서 사라지지만 아직 통합되지 않은 delta를 recovery card에 복원하고, consolidation이 실패 중이면 그 사실을 알린다. memory tool을 mount한 운영자를 위해 unknown write 보류와 secret 거절 경로는 config로 남아 있다. SQLite 오류는 degraded 관측과 timer 재접속으로 처리한다. 결과 충돌과 xd 중첩 호출을 단일 logical action 기준으로 기록한다.
 
 기존 OMP·Kubernetes 승인 hook·사용자 모델 설정·MCP credentials는 변경하지 않는다. headless/subagent K8s deny와 other-target approval 정책은 그대로다.
 
@@ -16,7 +16,7 @@ zvec 입력을 수정하지 않는다. gbrain의 기존 seven verbs를 모델이
 
 - docs/ARCHITECTURE.md: 최종 책임, 데이터 흐름, 자율성, 복구, 컨텍스트 및 한계
 - docs/MIGRATION.md: 데이터 보존, 설치, rollback
-- docs/SOURCE-AUDIT.md: OMP/gbrain/zvec 고정 소스 근거
+- docs/SOURCE-AUDIT.md: OMP/Sharpshooter/zvec 고정 소스 근거
 - docs/VERIFICATION.md: 이번에 실제 실행한 검사와 미검증 범위
 - docs/IMPLEMENTATION-WORKORDER.md: 실제 repository/host에 옮길 에이전트 지시서
 - config/AGENTS.runtime.md: 기존 정책에 병합할 짧은 운영 원칙
@@ -29,7 +29,7 @@ node scripts/check.mjs
 node scripts/measure.mjs
 ```
 
-Node 22.16 이상과 builtin SQLite를 사용한다. production npm dependency는 없다. 테스트는 54개, 실제 SQLite와 임시 filesystem을 사용하며 OMP/provider는 mock이다. 전체 OMP SDK/Bun/live MCP test를 대신하지 않는다.
+Node 22.16 이상과 builtin SQLite를 사용한다. production npm dependency는 없다. 테스트는 65개, 실제 SQLite와 임시 filesystem을 사용하며 OMP/provider는 mock이다. 전체 OMP SDK/Bun/live MCP test를 대신하지 않는다.
 
 ## 설치 계획과 선택적 활성화
 
@@ -71,10 +71,10 @@ node scripts/install-ompupdate-alias.mjs --uninstall
 
 ## 모델에 노출하는 표면
 
-도구는 runtime_status, runtime_checkpoint, runtime_evidence, runtime_reconcile 네 개다. 정상 개발에는 호출 의무가 없다. 평상시 request projection은 317 bytes였으며 1,000번 만들어도 message 하나만 남았다. 최대4 KiB는 출력 packing이지 작업 quota가 아니다.
+도구는 runtime_status, runtime_checkpoint, runtime_evidence, runtime_reconcile 네 개다. 정상 개발에는 호출 의무가 없다. 평상시 request projection은 539 bytes였으며 1,000번 만들어도 message 하나만 남았다. 최대4 KiB는 출력 packing이지 작업 quota가 아니다.
 
 사용자는 처음 목표를 주고 기존 권한을 제공한다. 그 범위에서 모델이 조사/구현/테스트/수정을 계속한다. 이미 승인하지 않은 Kubernetes 작업, 권한 없는 서비스 또는 알 수 없는 사실을 이 runtime이 우회하지 않는다. 프로세스 자체를 자동 재기동하는 OS supervisor는 포함하지 않았다.
 
 ## 정확한 보장 범위
 
-관측된 outcome과 agent attestation을 기록한다. 모든 subprocess/네트워크 부작용의 exactly-once를 보장하지 않는다. gbrain remember의 semantic dedup/idempotentHint를 request-key 보장으로 오인하지 않는다. 일반 unknown은 현재 소스를 다시 읽고 판단해야 한다. 계속 검증을 반복하는 judge loop를 만들지 않는다.
+관측된 outcome과 agent attestation을 기록한다. 모든 subprocess/네트워크 부작용의 exactly-once를 보장하지 않는다. Sharpshooter bank 관측은 통합 파이프라인의 상태 보고이지 어떤 결정이 영구 기억에 남는다는 보장이 아니다. friction gate가 delta를 버릴 수 있다. 일반 unknown은 현재 소스를 다시 읽고 판단해야 한다. 계속 검증을 반복하는 judge loop를 만들지 않는다.

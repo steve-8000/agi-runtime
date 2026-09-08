@@ -5,10 +5,14 @@ import { Journal, databasePath } from '../src/journal.mjs';
 import { Runtime } from '../src/kernel.mjs';
 import { config, VERSION } from '../src/contracts.mjs';
 import { projectContext } from '../src/context.mjs';
+import { observe } from '../src/memory.mjs';
+
+/** Bank re-read cadence. Ownership/observation timing, never a session execution budget. */
+const MEMORY_SAMPLE_MS=30000;
 
 /** OMP v18.1.11 public extension contract. No core patch, MCP client, model call or continuation loop. */
 export default function runtimeExtension(pi){
-  let runtime, ctxActive, timer, journalFile, options={};
+  let runtime, ctxActive, timer, journalFile, options={}, agentDir, memorySampledAt=0;
   let contractMissing=[], warningShown=false, recovering=false, retryAt=0, generation=0;
   const warn=message=>{pi.logger?.warn?.(message);if(!warningShown){ctxActive?.ui?.notify?.(message,'warning');warningShown=true;}};
   const reply=data=>({content:[{type:'text',text:JSON.stringify(data)}],details:data});
@@ -24,8 +28,16 @@ export default function runtimeExtension(pi){
       runtime=next;pi.logger?.info?.('Runtime journal recovered; inspect uncertain actions, never replay them automatically.');
     }catch{try{journal?.close();}catch{}}finally{recovering=false;}
   }
+  /** Read-only bank sample through OMP's own memory runtime. Never throws into a handler or timer. */
+  async function sampleMemory(ctx,force=false){
+    const current=runtime;
+    if(!current||(!force&&Date.now()-memorySampledAt<MEMORY_SAMPLE_MS))return;
+    memorySampledAt=Date.now();
+    try{const observed=await observe(ctx?.memory,agentDir,current.session);if(current===runtime)current.decisionMemory=observed;}
+    catch{if(current===runtime)current.decisionMemory=null;}
+  }
   async function attach(ctx){
-    teardown();ctxActive=ctx;journalFile=undefined;retryAt=0;warningShown=false;
+    teardown();ctxActive=ctx;journalFile=undefined;retryAt=0;warningShown=false;memorySampledAt=0;
     contractMissing=[];
     for(const [name,value] of [['sessionManager.getSessionId',ctx.sessionManager?.getSessionId],['setInterval',ctx.setInterval],['clearTimer',ctx.clearTimer]])
       if(typeof value!=='function')contractMissing.push(name);
@@ -33,21 +45,24 @@ export default function runtimeExtension(pi){
     if(contractMissing.length){warn(`Runtime disabled: missing OMP contract ${contractMissing.join(', ')}`);return;}
     const session=ctx.sessionManager.getSessionId();
     const sessionFile=typeof ctx.sessionManager.getSessionFile==='function'?ctx.sessionManager.getSessionFile():undefined;
-    const agentDir=pi.pi?.getAgentDir?.()??process.env.PI_CODING_AGENT_DIR??join(homedir(),'.omp','agent');
+    agentDir=pi.pi?.getAgentDir?.()??process.env.PI_CODING_AGENT_DIR??join(homedir(),'.omp','agent');
     const runtimeDir=process.env.OMP_RUNTIME_DIR??join(dirname(agentDir),'runtime');
     try{options=config(JSON.parse(readFileSync(process.env.OMP_RUNTIME_CONFIG??join(runtimeDir,'config.json'),'utf8')),m=>pi.logger?.warn?.(m));}
     catch(e){if(e.code!=='ENOENT')warn('Runtime config could not be read; using declared default tool identities. Existing Kubernetes policy is unchanged.');options=config();}
     let journal,lease;
     try{journalFile=databasePath(runtimeDir,ctx.cwd);journal=await Journal.open(journalFile);const ws=journal.workspace(ctx.cwd);lease=journal.acquire(ws,session,ctx.hasUI);}
-    catch(e){try{journal?.close();}catch{}journal=null;warn(`Runtime journal unavailable (${e.code??'JOURNAL_IO'}); continue local work; defer memory writes.`);}
+    catch(e){try{journal?.close();}catch{}journal=null;warn(`Runtime journal unavailable (${e.code??'JOURNAL_IO'}); continue local work; actions are not recorded.`);}
     runtime=new Runtime({journal,lease,root:ctx.cwd,session,sessionFile,options,log:warn});
-    timer=ctx.setInterval(async()=>{if(runtime?.health==='healthy')runtime.heartbeat();else if(journalFile)await recover(ctx);},5000);
+    timer=ctx.setInterval(async()=>{if(runtime?.health==='healthy')runtime.heartbeat();else if(journalFile)await recover(ctx);await sampleMemory(ctx);},5000);
+    await sampleMemory(ctx,true);
   }
   if(typeof pi.on!=='function'){pi.logger?.warn?.('Runtime unavailable: OMP event API missing');return;}
   pi.setLabel?.('Runtime');
   for(const name of ['session_start','session_switch','session_branch','session_tree'])pi.on(name,async(_e,ctx)=>attach(ctx));
   pi.on('session_shutdown',()=>teardown());
-  for(const name of ['session_compact','auto_compaction_end'])pi.on(name,()=>{if(runtime)runtime.resume=true;});
+  // Compaction drops the transcript. Re-read the bank at once so decisions queued in this
+  // session can be surfaced on the recovery card instead of being silently lost.
+  for(const name of ['session_compact','auto_compaction_end'])pi.on(name,(_e,ctx)=>{if(runtime){runtime.resume=true;void sampleMemory(ctx,true);}});
   pi.on('goal_updated',e=>runtime?.mirror(e.goal??null));
   pi.on('tool_call',e=>runtime?.intent(e));
   pi.on('tool_execution_start',e=>runtime?.start({...e,input:e.args}));

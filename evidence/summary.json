@@ -7,7 +7,7 @@
     "omp": "18.1.11"
   },
   "tests": {
-    "passed": 54,
+    "passed": 65,
     "failed": 0,
     "real": [
       "SQLite",
@@ -22,19 +22,19 @@
     ]
   },
   "checks": {
-    "mjs_files": 17,
+    "mjs_files": 19,
     "configuration": "passed"
   },
   "measure": {
     "iterations": 1000,
     "hookCycleMs": {
-      "median": 0.27429200000000264,
-      "p95": 0.5409159999999993,
-      "max": 0.9034999999999513
+      "median": 0.29050000000000864,
+      "p95": 0.5342500000000001,
+      "max": 1.0049159999999802
     },
     "context": {
-      "steadyBytes": 317,
-      "stressResumeBytes": 2296,
+      "steadyBytes": 539,
+      "stressResumeBytes": 2567,
       "packingBoundBytes": 4096,
       "runtimeMessagesAfter1000Builds": 1
     },
@@ -55,11 +55,11 @@
     "Kubernetes policy/hook",
     "runtime config keys",
     "MCP credentials",
-    "gbrain deployment",
     "zvec index"
   ],
   "changedOnThisHost": [
     "~/.omp/agent/extensions/agi-runtime symlink -> this checkout",
-    "~/.zshrc managed ompupdate block"
+    "~/.zshrc managed ompupdate block",
+    "~/.omp/runtime/config.json holds the three current keys"
   ]
 }

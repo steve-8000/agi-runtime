@@ -1,12 +1,16 @@
 # 기존 runtime에서 전환
 
-이 패키지는 `580f0e52…` 위에 이미 커밋된 변경이 아니다. 새 0.3.0 구현 후보이며 실제 OMP integration 검증 후 기존 한 개의 extension을 교체한다. 병렬로 두 runtime을 로드하면 이벤트/lease가 충돌할 수 있다.
+이 패키지는 `580f0e52…` 위에 이미 커밋된 변경이 아니다. 새 0.4.0 구현 후보이며 실제 OMP integration 검증 후 기존 한 개의 extension을 교체한다. 병렬로 두 runtime을 로드하면 이벤트/lease가 충돌할 수 있다.
 
 ## 제거 및 유지
 
-제거: execution budgets, requireApproval/structuredOperationTools 중복 승인, recall require/strike/skip/turn gate, memory outbox transport, 세션 종료 시 note 압박, 반복 상태 append.
+제거: execution budgets, requireApproval/structuredOperationTools 중복 승인, 회상 강제 gate, memory outbox transport, 세션 종료 시 note 압박, 반복 상태 append.
 
-유지: 기존 OMP loop와 model roles, task worker 비활성, K8s hook, zvec/gbrain MCP, source evidence primitive, 기존 SQLite 데이터, 모델 기반 read-back 복구.
+유지: 기존 OMP loop와 model roles, task worker 비활성, K8s hook, zvec MCP, source evidence primitive, 기존 SQLite 데이터, 운영자가 memory tool을 설정한 경우의 read-back 복구.
+
+`~/.omp/runtime/config.json`은 `memoryReadTools`, `memoryWriteTools`, `searchTools` 세 키만 갖는다. 다른 키가 남아 있으면 로드를 막지는 않지만 매 시작마다 경고를 내므로 지운다.
+
+0.4에서 추가된 것: OMP Sharpshooter bank의 read-only 관측. `ctx.memory.status()`의 `scope`로 bank를 찾아 미통합 delta와 consolidation 오류만 읽는다. 새 dependency, 새 타이머, 쓰기 경로는 없다.
 
 변경: 결과 first-wins를 관측 합산으로, xd envelope+child를 logical action 하나로, workspace unknown을 전역 차단 대신 복구 안내로, DB 장애를 degraded + managed retry로, 컨텍스트를 단일 projection으로.
 
@@ -35,4 +39,4 @@ journal schema 2/3/4를 읽는다. 필요한 schema4 테이블/인덱스를 만�
 
 ## 수행하지 않은 것
 
-이 컨테이너에서 실제 Mac symlink, user config, gbrain, zvec index, Kubernetes, origin/main은 변경하지 않았다. 포함된 install 테스트는 임시 디렉터리에서만 실행했다.
+install 테스트는 임시 디렉터리에서만 실행했다. Kubernetes와 origin/main은 변경하지 않았다. 0.4 cutover에서는 이 호스트의 `~/.omp/runtime/config.json`을 실제로 교체했다 — extension symlink는 이미 이 checkout을 가리키므로 소스 수정이 곧 설치본이며, 반영은 OMP 프로세스 재시작 시점이다.

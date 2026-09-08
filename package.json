@@ -1,9 +1,9 @@
 {
   "name": "@clab/omp-agi-runtime",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "OMP-native engineering runtime: bounded request context, optional journal and autonomous read-back recovery. No work budgets or recall gates.",
+  "description": "OMP-native engineering runtime: bounded request context, optional journal and autonomous read-back recovery. No work budgets or retrieval gates.",
   "license": "MIT",
   "engines": {
     "node": ">=22.16.0"

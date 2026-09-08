@@ -1,14 +1,14 @@
 # 이번 패키지의 검증
 
-기준일 2026-09-06. 환경: macOS arm64, Node v26.7.0, OMP 18.1.11(Homebrew). 이 기록은 이전 repository의 81/87 tests를 재사용한 것이 아니다.
+기준일 2026-09-08 (0.4 Sharpshooter cutover; 최초 작성 2026-09-06). 환경: macOS arm64, Node v26.7.0, OMP 18.1.11(Homebrew). 이 기록은 이전 repository의 81/87 tests를 재사용한 것이 아니다.
 최초 패키지 작성은 Linux x64 / Node v22.16.0 컨테이너였고, 아래 수치는 실제 설치 호스트에서 다시 실행한 값이다.
 
 ## 실제 실행
 
 | 명령/검사 | 결과 | 범위 |
 |---|---|---|
-| `node --test tests/*.test.mjs` | 54 passed, 0 failed | 실제 SQLite/임시 파일 시스템 + OMP-shaped mock event adapter |
-| `node scripts/check.mjs` | 17 MJS parser checks + runtime config validation passed | TypeScript/OMP SDK build 아님 |
+| `node --test tests/*.test.mjs` | 65 passed, 0 failed | 실제 SQLite/임시 파일 시스템 + OMP-shaped mock event adapter |
+| `node scripts/check.mjs` | 19 MJS parser checks + runtime config validation passed | TypeScript/OMP SDK build 아님 |
 | `node scripts/measure.mjs` | 1,000 synthetic complete hook cycles | 실제 로컬 SQLite, fake tool 결과, 모델 호출 없음 |
 | install 테스트 | default plan, explicit activation/idempotency/rollback, foreign file/package 거절, `ompupdate` rc 블록의 고정점·바이트 단위 uninstall·마커 불균형 거절 | 임시 디렉터리와 임시 rc 파일만 변경 |
 | `node scripts/upgrade-check.mjs --live` | PASS, OMP 18.1.11, probe가 저널 1개 생성, 응답 `done` | scratch workspace/runtime dir에서 실제 `omp -p` 1회. 설치된 바이너리의 discover/import/attach를 확인 |
@@ -18,7 +18,8 @@
 ## 주요 확인
 
 - Local result/end 충돌과 exit-code-only 충돌에서 false-success를 만들지 않음.
-- Known memory write의 오류/불완전 ack/입력 수정은 unknown. 이후 성공 관측이 앞선 ambiguity를 지우지 않음.
+- 운영자가 memory tool을 설정한 경우의 오류/불완전 ack/입력 수정은 unknown. 이후 성공 관측이 앞선 ambiguity를 지우지 않음. 기본 배포에는 분류할 memory tool이 없음.
+- Sharpshooter bank 관측: 존재하지 않는 bank는 빈 상태가 아니라 미관측(null), path escape scope 거절, 손상된 delta 하나가 나머지를 버리지 않음, `lastError`는 원문 없이 분류값 경고로만 투영되고(토큰이 든 오류 문자열로 회귀 테스트) 통합된 기억 내용은 중복 주입하지 않음, 큐 결정은 resume에서만 나타나고 packing 압박에서 recovery card보다 먼저 잘림.
 - 같은 toolCallId의 xd outer/inner: logical action/effect 하나, physical observation 둘. timeout에도 unknown 하나.
 - zvec 요청 인자와 범위 옵션 그대로, read failure는 memory/workspace를 잠그지 않음.
 - 실행 카운터가 605회 이상이고 simulated clock이 24시간 경과해도 작업 차단 없음. heartbeat는 테스트 시계에서 유지.
@@ -33,15 +34,15 @@
 
 ## 크기와 속도
 
-측정 당시 정상 projection 317 bytes, 큰 checkpoint + 100 unknown stress projection 2,296 bytes, packing 최대 4,096 bytes. 이 byte 수는 runtime projection만이며 도구 schema, AGENTS, 원래 대화, zvec/gbrain 응답은 별도다. 토큰 수는 측정하지 않았다. 이 한도는 반환 콘텐츠의 크기이며 실행을 중단시키는 budget이 아니다.
+측정 당시 정상 projection 539 bytes, 큰 checkpoint + 100 unknown stress projection 2,567 bytes, packing 최대 4,096 bytes. 이 byte 수는 runtime projection만이며 도구 schema, AGENTS, 주입된 결정 기억, 원래 대화, zvec 응답은 별도다. 토큰 수는 측정하지 않았다. 이 한도는 반환 콘텐츠의 크기이며 실행을 중단시키는 budget이 아니다.
 
-1,000 synthetic read lifecycle의 median 0.276 ms, p95 0.517 ms, max 1.639 ms. 로컬 임시 파일 시스템과 OS cache의 영향을 받으며, 실제 SSD crash durability, Mac/Bun 또는 긴 tool output의 overhead를 뜻하지 않는다. 실제 도구/LLM/network latency는 포함하지 않는다. 운영 SLO나 향상률로 인용하지 않는다.
+1,000 synthetic read lifecycle의 median 0.304 ms, p95 0.613 ms, max 1.462 ms. 로컬 임시 파일 시스템과 OS cache의 영향을 받으며, 실제 SSD crash durability, Mac/Bun 또는 긴 tool output의 overhead를 뜻하지 않는다. 실제 도구/LLM/network latency는 포함하지 않는다. 운영 SLO나 향상률로 인용하지 않는다.
 
 ## 아직 검증하지 않은 것
 
 - 실제 OMP v18.1.11 바이너리에서 factory load, live zod schema 및 context custom message 변환.
 - Bun 내장 SQLite 실행과 실제 Mac filesystem/power-loss durability.
-- 실제 gbrain의 인증, 노출 이름, 응답/에러 shape와 timeout-after-commit.
+- Sharpshooter consolidation 실패 경로의 실제 재현(`state.json`의 `lastError`는 shape 기준으로만 검증).
 - 실제 zvec index/freshness/embedding 모델과 검색 품질.
 - 현재 설치된 kubernetes-approval.ts의 모든 tool/eval/subagent 경로.
 - provider-native 실행/직접 subprocess가 event를 우회하는 경로, 모든 advisor/Scout coverage.

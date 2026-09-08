@@ -9,8 +9,7 @@
 | steve-8000/agi-runtime | 580f0e52b67769acc3642053f167eaaf60d2c7ad | main ref, 최신 수정 diff, source-pins, evidence primitive, 기존 설계/검토 이력 |
 | can1357/oh-my-pi | v18.1.11 | 최신 release 확인, extension event/public API, custom message/session 저장, CLI args |
 | zvec-ai/zvec-grep | 52653951b24617762f4ab0c71c34d594e5001617 | 최신 commit, MCP search/freshness 계약(기존 source 검토 포함) |
-| garrytan/gbrain | 8c70f6255047a7647adb30b1d6333a48068d9fa5 | 최신 commit, MEMORY_VERBS v1 문서, src/core/verbs.ts 실제 입력 계약 |
-| clab-one/gbrain-server | 조회 시 deploy/gbrain.yaml | gbrain.clab.one과 verbs surface, 기존 로컬 모델 경로. 실제 pod 상태는 미검증 |
+| OMP Sharpshooter backend | v18.1.11 설치 바이너리 | `sharpshooter/{paths,queue,extract,consolidate,backend}.ts`, `memory-backend/runtime.ts`, settings schema. 설치본 자체에서 직접 확인 |
 
 ## OMP: 구현에 직접 반영한 사실
 
@@ -29,20 +28,19 @@ invokeTool은 same-name native builtin delegation이다. arbitrary MCP를 부르
 
 Custom session record에는 type:title 슬롯이 앞설 수 있고 parentSession은 타입이 고정된 foreign key가 아니다. 그래서 임의 JSONL 위치나 parent ID를 추측하는 process supervisor를 만들지 않았다.
 
-## gbrain: 결과 계약과 안전성의 구분
+## Sharpshooter: 무엇을 읽어도 되고 무엇을 주장하면 안 되는가
 
-- https://github.com/garrytan/gbrain/blob/8c70f6255047a7647adb30b1d6333a48068d9fa5/docs/protocol/MEMORY_VERBS_v1.md
-- https://github.com/garrytan/gbrain/blob/8c70f6255047a7647adb30b1d6333a48068d9fa5/src/core/verbs.ts
+설치된 v18.1.11 바이너리에서 직접 확인한 사실만 사용한다.
 
-MEMORY_VERBS v1은 additive 확장을 허용하는 명시적 계약이다. context_pack/delta는 이미 존재하므로 새 memory aggregator를 만들지 않는다. context_pack.entities는 comma-separated string이다. recall/entity와 달리 synthesize는 별도 LLM을 호출할 수 있으므로 hot path 기본 호출로 두지 않는다.
+- extraction과 consolidation은 `sharpshooter.model` 하나를 공유하고, effort는 코드에 `Low`/`Medium`으로 고정되어 있다. selector에 `:high`를 붙여도 Sharpshooter는 그 값을 쓰지 않는다. 미설정 시 `smol` role로 떨어진다.
+- bank는 `<agentDir>/memories/sharpshooter/<bank id>/`이고 bank id는 cwd에서 파생된다. 파생식(`basename` slug + `Bun.hash`)을 재구현하지 않는다. `ctx.memory.status()`가 돌려주는 `scope`가 backend 자신이 쓰는 id이므로 그것만 사용한다.
+- 큐 파일은 `queue/<sessionId>/<ts base36>-<rand>.json`이고 delta는 `v:1`이다. 파일명이 시간 순 정렬이라는 성질에만 의존한다.
+- `state.json`은 `v:1`, `lastConsolidatedAt`, 선택적 `lastResult`/`lastError`다. shape이 다르면 관측을 null로 만들고 아무것도 주장하지 않는다. `lastError.message`는 backend가 `String(error)`로 저장한 provider/filesystem 원문이므로 모델 컨텍스트로 옮기지 않는다 — 고정 목록 분류값만 내보낸다.
+- extraction은 evidence 문자열이 실제 사용자 프롬프트의 부분문자열일 때만 delta를 받아들이고, friction gate와 consolidation이 delta를 버릴 수 있다. 따라서 “사용자가 말했으니 기억에 남는다”는 보장은 없다. 큐에 있다는 관측을 저장 보장으로 승격하지 않는다.
+- `taskDepth > 0`이면 backend가 아예 시작하지 않는다. subagent는 추출도 주입도 받지 않는다.
+- backend는 `save`를 구현하지 않는다. runtime은 기억을 쓰지 않는다.
 
-중요한 정정: `remember` 실제 코드에는 `annotations.idempotentHint: true`가 있다. 따라서 ‘서버에 어떠한 dedup도 없다’는 설명은 틀리다. 문서는 similarity 기반 dedup/supersession과 embedding 부재 시 degraded_dedup도 설명한다. 이것은 요청 ID의 영속 uniqueness/exactly-once 계약과 동일하지 않다. 이번 구현은 unknown remember를 재전송하지 않는 보수적인 정책을 사용한다.
-
-`forget`은 opaque fact ID 기준 idempotent로 문서화되어 있다. 이번 reducer는 write 오류를 일관되게 unknown 처리하므로 forget도 read-back을 요구할 수 있다. 정확한 ID retry를 별도 최적화하지 않은 의도적인 단순화이며 서버의 idempotency가 없다는 주장은 하지 않는다.
-
-protocol_version/status/error 등의 유효한 응답은 구조화된 관측으로 처리한다. 성공 응답이 암호학적 영수증이거나 middleware 영향이 없는 원본이라고 가정하지 않는다. 모델이 받은 memory text를 새 instruction으로 실행하지 않는다.
-
-`budget_tokens`는 반환 콘텐츠 packing을 위한 인자다. 실행 시간/호출 수 quota 제거와 충돌하지 않는다. private/world는 gbrain의 인증/scope 조건을 따르며 entity 슬러그를 ACL로 착각하지 않는다.
+모델이 주입된 기억 텍스트를 새 instruction으로 실행하지 않는다. 주입 memory는 evidence이며 permission이 아니다.
 
 ## zvec
 
