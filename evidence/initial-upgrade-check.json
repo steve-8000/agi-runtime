@@ -1,0 +1,110 @@
+{
+  "status": "PASS",
+  "scope": "runtime/extension/Sharpshooter only",
+  "ompVersion": "omp/18.1.11",
+  "liveProbe": true,
+  "extensionLink": "/Users/steve/orca/workspaces/omp-agi-runtime/scallop",
+  "probe": {
+    "status": "PASS",
+    "model": "openai-codex/gpt-6-astra",
+    "runtimeVersion": "0.5.0",
+    "scope": "real OMP, native edits/execution, lazy-intel discovery and backend calls; no production changes",
+    "durationMs": 129412,
+    "checks": {
+      "processExited": true,
+      "attached": true,
+      "sharpshooter": true,
+      "oneIntelligenceTool": true,
+      "oneIndexLifecycle": true,
+      "nativeMultiTurn": true,
+      "intelligenceBackends": true,
+      "intelligenceReadOnly": true,
+      "nativeVerification": true,
+      "repairedBehavior": true,
+      "verifierUnchanged": true,
+      "runtimeHealthy": true
+    },
+    "modelTurns": 16,
+    "operations": [
+      "search",
+      "architecture",
+      "references"
+    ],
+    "toolNames": [
+      "read",
+      "todo",
+      "glob",
+      "mcp__lazy_intel_code_intel",
+      "bash",
+      "edit",
+      "runtime_status"
+    ],
+    "memory": {
+      "backend": "sharpshooter",
+      "active": true,
+      "scope": "workspace-29c8045qmo0lq"
+    },
+    "runtimeStatus": {
+      "health": "healthy",
+      "version": "0.5.0",
+      "totalUnknown": 0
+    },
+    "fixtureBeforeExit": 1,
+    "fixtureAfterExit": 0,
+    "processExit": 0,
+    "processError": null,
+    "stderr": ""
+  },
+  "steps": [
+    {
+      "name": "omp-version",
+      "command": "omp --version",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 214,
+      "stdout": "omp/18.1.11\n",
+      "stderr": "",
+      "error": null
+    },
+    {
+      "name": "runtime-static-check",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/check.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 556,
+      "stdout": "{\"check\":\"syntax-and-config\",\"files\":17,\"status\":\"passed\",\"scope\":\"JavaScript parser and runtime options; not an OMP SDK build or live tool integration\"}\n",
+      "stderr": "",
+      "error": null
+    },
+    {
+      "name": "runtime-regressions",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node --test --test-reporter=tap tests/runtime.test.mjs tests/extension.test.mjs tests/memory.test.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 839,
+      "stdout": "TAP version 13\n# Subtest: compaction awaits the current Sharpshooter bank before the next provider request\nok 1 - compaction awaits the current Sharpshooter bank before the next provider request\n  ---\n  duration_ms: 8.209625\n  type: 'test'\n  ...\n# Subtest: normal headless development works without an interactive prompt\nok 2 - normal headless development works without an interactive prompt\n  ---\n  duration_ms: 5.56725\n  type: 'test'\n  ...\n# Subtest: context callback does not mutate native input or grow old runtime messages\nok 3 - context callback does not mutate native input or grow old runtime messages\n  ---\n  duration_ms: 4.213583\n  type: 'test'\n  ...\n# Subtest: context contract failure disables only this extension, without a new global gate\nok 4 - context contract failure disables only this extension, without a new global gate\n  ---\n  duration_ms: 1.376708\n  type: 'test'\n  ...\n# Subtest: existing Kubernetes deny remains effective; runtime never returns an allow override\nok 5 - existing Kubernetes deny remains effective; runtime never returns an allow override\n  ---\n  duration_ms: 3.845166\n  type: 'test'\n  ...\n# Subtest: lease loss and reattachment use existing timer without human interaction\nok 6 - lease loss and reattachment use existing timer without human interaction\n  ---\n  duration_ms: 5.19\n  type: 'test'\n  ...\n# Subtest: operator pause remains authoritative; automatic recovery never clears it\nok 7 - operator pause remains authoritative; automatic recovery never clears it\n  ---\n  duration_ms: 5.523667\n  type: 'test'\n  ...\n# Subtest: compaction makes a recovery card for one model round, not every stored turn\nok 8 - compaction makes a recovery card for one model round, not every stored turn\n  ---\n  duration_ms: 3.864334\n  type: 'test'\n  ...\n# Subtest: a bank the backend has not created yet is unobserved, not empty\nok 9 - a bank the backend has not created yet is unobserved, not empty\n  ---\n  duration_ms: 1.386\n  type: 'test'\n  ...\n# Subtest: a bank id containing a path escape is refused\nok 10 - a bank id containing a path escape is refused\n  ---\n  duration_ms: 0.792541\n  type: 'test'\n  ...\n# Subtest: queued deltas are reported with the losing session first and a full total\nok 11 - queued deltas are reported with the losing session first and a full total\n  ---\n  duration_ms: 2.327709\n  type: 'test'\n  ...\n# Subtest: a malformed delta is skipped without discarding the readable ones\nok 12 - a malformed delta is skipped without discarding the readable ones\n  ---\n  duration_ms: 1.418375\n  type: 'test'\n  ...\n# Subtest: a failing consolidation is observed rather than reported as healthy\nok 13 - a failing consolidation is observed rather than reported as healthy\n  ---\n  duration_ms: 1.008708\n  type: 'test'\n  ...\n# Subtest: a raw backend error string never leaves the observer\nok 14 - a raw backend error string never leaves the observer\n  ---\n  duration_ms: 1.156834\n  type: 'test'\n  ...\n# Subtest: another memory backend produces no sharpshooter observation\nok 15 - another memory backend produces no sharpshooter observation\n  ---\n  duration_ms: 1.126583\n  type: 'test'\n  ...\n# Subtest: unconsolidated decisions reach the model only on the recovery card\nok 16 - unconsolidated decisions reach the model only on the recovery card\n  ---\n  duration_ms: 4.363292\n  type: 'test'\n  ...\n# Subtest: a failing consolidation is projected as a persistence warning, not as memory content\nok 17 - a failing consolidation is projected as a persistence warning, not as memory content\n  ---\n  duration_ms: 3.23275\n  type: 'test'\n  ...\n# Subtest: packing drops queued decisions before the rest of the recovery card\nok 18 - packing drops queued decisions before the rest of the recovery card\n  ---\n  duration_ms: 3.510083\n  type: 'test'\n  ...\n# Subtest: default runtime records a complete native tool cycle without degrading\nok 19 - default runtime records a complete native tool cycle without degrading\n  ---\n  duration_ms: 6.948625\n  type: 'test'\n  ...\n# Subtest: retired search configuration cannot let a native mutation bypass pause\nok 20 - retired search configuration cannot let a native mutation bypass pause\n  ---\n  duration_ms: 4.159084\n  type: 'test'\n  ...\n# Subtest: code_intel stays a read through xd envelopes even with a legacy operator config\nok 21 - code_intel stays a read through xd envelopes even with a legacy operator config\n  ---\n  duration_ms: 4.843\n  type: 'test'\n  ...\n# Subtest: failed code intelligence is a failed read and never locks native source work\nok 22 - failed code intelligence is a failed read and never locks native source work\n  ---\n  duration_ms: 5.207584\n  type: 'test'\n  ...\n# Subtest: success then failure never remains succeeded\nok 23 - success then failure never remains succeeded\n  ---\n  duration_ms: 3.814459\n  type: 'test'\n  ...\n# Subtest: failure then success stays failed with conflict metadata\nok 24 - failure then success stays failed with conflict metadata\n  ---\n  duration_ms: 3.237959\n  type: 'test'\n  ...\n# Subtest: exit-code-only result divergence is detected\nok 25 - exit-code-only result divergence is detected\n  ---\n  duration_ms: 3.457958\n  type: 'test'\n  ...\n# Subtest: repeated success cannot erase an earlier error in the same result phase\nok 26 - repeated success cannot erase an earlier error in the same result phase\n  ---\n  duration_ms: 3.021458\n  type: 'test'\n  ...\n# Subtest: a started action is executing until end; result-only observations can settle\nok 27 - a started action is executing until end; result-only observations can settle\n  ---\n  duration_ms: 3.824\n  type: 'test'\n  ...\n# Subtest: xd effect outer and child correlate without merging independent calls\nok 28 - xd effect outer and child correlate without merging independent calls\n  ---\n  duration_ms: 4.145917\n  type: 'test'\n  ...\n# Subtest: exact duplicate dispatch is refused without pretending it needs approval\nok 29 - exact duplicate dispatch is refused without pretending it needs approval\n  ---\n  duration_ms: 3.539375\n  type: 'test'\n  ...\n# Subtest: input drift stays uncertain but does not lock unrelated work\nok 30 - input drift stays uncertain but does not lock unrelated work\n  ---\n  duration_ms: 3.315833\n  type: 'test'\n  ...\n# Subtest: control and read operations remain available during an explicit pause\nok 31 - control and read operations remain available during an explicit pause\n  ---\n  duration_ms: 2.522958\n  type: 'test'\n  ...\n# Subtest: persistent I/O failure stops DB attempts, not native source work\nok 32 - persistent I/O failure stops DB attempts, not native source work\n  ---\n  duration_ms: 2.499792\n  type: 'test'\n  ...\n# Subtest: lost lease degrades observation and leaves source reads available\nok 33 - lost lease degrades observation and leaves source reads available\n  ---\n  duration_ms: 2.066708\n  type: 'test'\n  ...\n# Subtest: read-back and attestation resolve only the selected unknown actions\nok 34 - read-back and attestation resolve only the selected unknown actions\n  ---\n  duration_ms: 4.130125\n  type: 'test'\n  ...\n# Subtest: a same-tick earlier read and a later failed read cannot certify an effect\nok 35 - a same-tick earlier read and a later failed read cannot certify an effect\n  ---\n  duration_ms: 3.292708\n  type: 'test'\n  ...\n# Subtest: historical external-memory observations are preserved and cannot be recertified by local reads\nok 36 - historical external-memory observations are preserved and cannot be recertified by local reads\n  ---\n  duration_ms: 3.452083\n  type: 'test'\n  ...\n# Subtest: checkpoint rejects obvious credentials without storing them\nok 37 - checkpoint rejects obvious credentials without storing them\n  ---\n  duration_ms: 2.0655\n  type: 'test'\n  ...\n# Subtest: steady context adds nothing and recovery remains one bounded detached projection\nok 38 - steady context adds nothing and recovery remains one bounded detached projection\n  ---\n  duration_ms: 265.558\n  type: 'test'\n  ...\n# Subtest: old budgets and recall options never limit a long authorized task\nok 39 - old budgets and recall options never limit a long authorized task\n  ---\n  duration_ms: 399.382667\n  type: 'test'\n  ...\n# Subtest: resolved journal directory cannot be symlinked into workspace\nok 40 - resolved journal directory cannot be symlinked into workspace\n  ---\n  duration_ms: 2.744459\n  type: 'test'\n  ...\n# Subtest: same session second writer is rejected, sibling session is allowed\nok 41 - same session second writer is rejected, sibling session is allowed\n  ---\n  duration_ms: 2.132792\n  type: 'test'\n  ...\n# Subtest: reopening old schema preserves nonempty legacy outbox\nok 42 - reopening old schema preserves nonempty legacy outbox\n  ---\n  duration_ms: 2.8885\n  type: 'test'\n  ...\n# Subtest: unsupported schema is not reset or destroyed\nok 43 - unsupported schema is not reset or destroyed\n  ---\n  duration_ms: 2.528708\n  type: 'test'\n  ...\n# Subtest: crash recovery marks unfinished effects unknown without replay or workspace lock\nok 44 - crash recovery marks unfinished effects unknown without replay or workspace lock\n  ---\n  duration_ms: 3.124084\n  type: 'test'\n  ...\n# Subtest: failed final persistence is visible as uncertainty before reattach\nok 45 - failed final persistence is visible as uncertainty before reattach\n  ---\n  duration_ms: 2.521875\n  type: 'test'\n  ...\n1..45\n# tests 45\n# suites 0\n# pass 45\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 803.786583\n",
+      "stderr": "",
+      "error": null
+    },
+    {
+      "name": "extension-link",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/install.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 31,
+      "stdout": "{\n  \"action\": \"plan\",\n  \"candidate\": \"/Users/steve/orca/workspaces/omp-agi-runtime/scallop\",\n  \"target\": \"/Users/steve/.omp/agent/extensions/agi-runtime\",\n  \"current\": \"/Users/steve/orca/workspaces/omp-agi-runtime/scallop\",\n  \"runtimeDir\": \"/Users/steve/.omp/runtime\",\n  \"changed\": false,\n  \"preserved\": [\n    \"OMP config.yml\",\n    \"AGENTS.md\",\n    \"Kubernetes approval hook\",\n    \"MCP credentials\",\n    \"journal data\"\n  ],\n  \"note\": \"Restart the OMP process to load a different extension version. No running process was altered.\"\n}\n",
+      "stderr": "",
+      "error": null
+    },
+    {
+      "name": "live-autonomy",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/live-probe.mjs --model openai-codex/gpt-6-astra",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 129520,
+      "stdout": "{\n  \"status\": \"PASS\",\n  \"model\": \"openai-codex/gpt-6-astra\",\n  \"runtimeVersion\": \"0.5.0\",\n  \"scope\": \"real OMP, native edits/execution, lazy-intel discovery and backend calls; no production changes\",\n  \"durationMs\": 129412,\n  \"checks\": {\n    \"processExited\": true,\n    \"attached\": true,\n    \"sharpshooter\": true,\n    \"oneIntelligenceTool\": true,\n    \"oneIndexLifecycle\": true,\n    \"nativeMultiTurn\": true,\n    \"intelligenceBackends\": true,\n    \"intelligenceReadOnly\": true,\n    \"nativeVerification\": true,\n    \"repairedBehavior\": true,\n    \"verifierUnchanged\": true,\n    \"runtimeHealthy\": true\n  },\n  \"modelTurns\": 16,\n  \"operations\": [\n    \"search\",\n    \"architecture\",\n    \"references\"\n  ],\n  \"toolNames\": [\n    \"read\",\n    \"todo\",\n    \"glob\",\n    \"mcp__lazy_intel_code_intel\",\n    \"bash\",\n    \"edit\",\n    \"runtime_status\"\n  ],\n  \"memory\": {\n    \"backend\": \"sharpshooter\",\n    \"active\": true,\n    \"scope\": \"workspace-29c8045qmo0lq\"\n  },\n  \"runtimeStatus\": {\n    \"health\": \"healthy\",\n    \"version\": \"0.5.0\",\n    \"totalUnknown\": 0\n  },\n  \"fixtureBeforeExit\": 1,\n  \"fixtureAfterExit\": 0,\n  \"processExit\": 0,\n  \"processError\": null,\n  \"stderr\": \"\"\n}\n",
+      "stderr": "",
+      "error": null
+    }
+  ]
+}

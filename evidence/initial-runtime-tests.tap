@@ -1,0 +1,280 @@
+TAP version 13
+# Subtest: compaction awaits the current Sharpshooter bank before the next provider request
+ok 1 - compaction awaits the current Sharpshooter bank before the next provider request
+  ---
+  duration_ms: 8.209625
+  type: 'test'
+  ...
+# Subtest: normal headless development works without an interactive prompt
+ok 2 - normal headless development works without an interactive prompt
+  ---
+  duration_ms: 5.56725
+  type: 'test'
+  ...
+# Subtest: context callback does not mutate native input or grow old runtime messages
+ok 3 - context callback does not mutate native input or grow old runtime messages
+  ---
+  duration_ms: 4.213583
+  type: 'test'
+  ...
+# Subtest: context contract failure disables only this extension, without a new global gate
+ok 4 - context contract failure disables only this extension, without a new global gate
+  ---
+  duration_ms: 1.376708
+  type: 'test'
+  ...
+# Subtest: existing Kubernetes deny remains effective; runtime never returns an allow override
+ok 5 - existing Kubernetes deny remains effective; runtime never returns an allow override
+  ---
+  duration_ms: 3.845166
+  type: 'test'
+  ...
+# Subtest: lease loss and reattachment use existing timer without human interaction
+ok 6 - lease loss and reattachment use existing timer without human interaction
+  ---
+  duration_ms: 5.19
+  type: 'test'
+  ...
+# Subtest: operator pause remains authoritative; automatic recovery never clears it
+ok 7 - operator pause remains authoritative; automatic recovery never clears it
+  ---
+  duration_ms: 5.523667
+  type: 'test'
+  ...
+# Subtest: compaction makes a recovery card for one model round, not every stored turn
+ok 8 - compaction makes a recovery card for one model round, not every stored turn
+  ---
+  duration_ms: 3.864334
+  type: 'test'
+  ...
+# Subtest: a bank the backend has not created yet is unobserved, not empty
+ok 9 - a bank the backend has not created yet is unobserved, not empty
+  ---
+  duration_ms: 1.386
+  type: 'test'
+  ...
+# Subtest: a bank id containing a path escape is refused
+ok 10 - a bank id containing a path escape is refused
+  ---
+  duration_ms: 0.792541
+  type: 'test'
+  ...
+# Subtest: queued deltas are reported with the losing session first and a full total
+ok 11 - queued deltas are reported with the losing session first and a full total
+  ---
+  duration_ms: 2.327709
+  type: 'test'
+  ...
+# Subtest: a malformed delta is skipped without discarding the readable ones
+ok 12 - a malformed delta is skipped without discarding the readable ones
+  ---
+  duration_ms: 1.418375
+  type: 'test'
+  ...
+# Subtest: a failing consolidation is observed rather than reported as healthy
+ok 13 - a failing consolidation is observed rather than reported as healthy
+  ---
+  duration_ms: 1.008708
+  type: 'test'
+  ...
+# Subtest: a raw backend error string never leaves the observer
+ok 14 - a raw backend error string never leaves the observer
+  ---
+  duration_ms: 1.156834
+  type: 'test'
+  ...
+# Subtest: another memory backend produces no sharpshooter observation
+ok 15 - another memory backend produces no sharpshooter observation
+  ---
+  duration_ms: 1.126583
+  type: 'test'
+  ...
+# Subtest: unconsolidated decisions reach the model only on the recovery card
+ok 16 - unconsolidated decisions reach the model only on the recovery card
+  ---
+  duration_ms: 4.363292
+  type: 'test'
+  ...
+# Subtest: a failing consolidation is projected as a persistence warning, not as memory content
+ok 17 - a failing consolidation is projected as a persistence warning, not as memory content
+  ---
+  duration_ms: 3.23275
+  type: 'test'
+  ...
+# Subtest: packing drops queued decisions before the rest of the recovery card
+ok 18 - packing drops queued decisions before the rest of the recovery card
+  ---
+  duration_ms: 3.510083
+  type: 'test'
+  ...
+# Subtest: default runtime records a complete native tool cycle without degrading
+ok 19 - default runtime records a complete native tool cycle without degrading
+  ---
+  duration_ms: 6.948625
+  type: 'test'
+  ...
+# Subtest: retired search configuration cannot let a native mutation bypass pause
+ok 20 - retired search configuration cannot let a native mutation bypass pause
+  ---
+  duration_ms: 4.159084
+  type: 'test'
+  ...
+# Subtest: code_intel stays a read through xd envelopes even with a legacy operator config
+ok 21 - code_intel stays a read through xd envelopes even with a legacy operator config
+  ---
+  duration_ms: 4.843
+  type: 'test'
+  ...
+# Subtest: failed code intelligence is a failed read and never locks native source work
+ok 22 - failed code intelligence is a failed read and never locks native source work
+  ---
+  duration_ms: 5.207584
+  type: 'test'
+  ...
+# Subtest: success then failure never remains succeeded
+ok 23 - success then failure never remains succeeded
+  ---
+  duration_ms: 3.814459
+  type: 'test'
+  ...
+# Subtest: failure then success stays failed with conflict metadata
+ok 24 - failure then success stays failed with conflict metadata
+  ---
+  duration_ms: 3.237959
+  type: 'test'
+  ...
+# Subtest: exit-code-only result divergence is detected
+ok 25 - exit-code-only result divergence is detected
+  ---
+  duration_ms: 3.457958
+  type: 'test'
+  ...
+# Subtest: repeated success cannot erase an earlier error in the same result phase
+ok 26 - repeated success cannot erase an earlier error in the same result phase
+  ---
+  duration_ms: 3.021458
+  type: 'test'
+  ...
+# Subtest: a started action is executing until end; result-only observations can settle
+ok 27 - a started action is executing until end; result-only observations can settle
+  ---
+  duration_ms: 3.824
+  type: 'test'
+  ...
+# Subtest: xd effect outer and child correlate without merging independent calls
+ok 28 - xd effect outer and child correlate without merging independent calls
+  ---
+  duration_ms: 4.145917
+  type: 'test'
+  ...
+# Subtest: exact duplicate dispatch is refused without pretending it needs approval
+ok 29 - exact duplicate dispatch is refused without pretending it needs approval
+  ---
+  duration_ms: 3.539375
+  type: 'test'
+  ...
+# Subtest: input drift stays uncertain but does not lock unrelated work
+ok 30 - input drift stays uncertain but does not lock unrelated work
+  ---
+  duration_ms: 3.315833
+  type: 'test'
+  ...
+# Subtest: control and read operations remain available during an explicit pause
+ok 31 - control and read operations remain available during an explicit pause
+  ---
+  duration_ms: 2.522958
+  type: 'test'
+  ...
+# Subtest: persistent I/O failure stops DB attempts, not native source work
+ok 32 - persistent I/O failure stops DB attempts, not native source work
+  ---
+  duration_ms: 2.499792
+  type: 'test'
+  ...
+# Subtest: lost lease degrades observation and leaves source reads available
+ok 33 - lost lease degrades observation and leaves source reads available
+  ---
+  duration_ms: 2.066708
+  type: 'test'
+  ...
+# Subtest: read-back and attestation resolve only the selected unknown actions
+ok 34 - read-back and attestation resolve only the selected unknown actions
+  ---
+  duration_ms: 4.130125
+  type: 'test'
+  ...
+# Subtest: a same-tick earlier read and a later failed read cannot certify an effect
+ok 35 - a same-tick earlier read and a later failed read cannot certify an effect
+  ---
+  duration_ms: 3.292708
+  type: 'test'
+  ...
+# Subtest: historical external-memory observations are preserved and cannot be recertified by local reads
+ok 36 - historical external-memory observations are preserved and cannot be recertified by local reads
+  ---
+  duration_ms: 3.452083
+  type: 'test'
+  ...
+# Subtest: checkpoint rejects obvious credentials without storing them
+ok 37 - checkpoint rejects obvious credentials without storing them
+  ---
+  duration_ms: 2.0655
+  type: 'test'
+  ...
+# Subtest: steady context adds nothing and recovery remains one bounded detached projection
+ok 38 - steady context adds nothing and recovery remains one bounded detached projection
+  ---
+  duration_ms: 265.558
+  type: 'test'
+  ...
+# Subtest: old budgets and recall options never limit a long authorized task
+ok 39 - old budgets and recall options never limit a long authorized task
+  ---
+  duration_ms: 399.382667
+  type: 'test'
+  ...
+# Subtest: resolved journal directory cannot be symlinked into workspace
+ok 40 - resolved journal directory cannot be symlinked into workspace
+  ---
+  duration_ms: 2.744459
+  type: 'test'
+  ...
+# Subtest: same session second writer is rejected, sibling session is allowed
+ok 41 - same session second writer is rejected, sibling session is allowed
+  ---
+  duration_ms: 2.132792
+  type: 'test'
+  ...
+# Subtest: reopening old schema preserves nonempty legacy outbox
+ok 42 - reopening old schema preserves nonempty legacy outbox
+  ---
+  duration_ms: 2.8885
+  type: 'test'
+  ...
+# Subtest: unsupported schema is not reset or destroyed
+ok 43 - unsupported schema is not reset or destroyed
+  ---
+  duration_ms: 2.528708
+  type: 'test'
+  ...
+# Subtest: crash recovery marks unfinished effects unknown without replay or workspace lock
+ok 44 - crash recovery marks unfinished effects unknown without replay or workspace lock
+  ---
+  duration_ms: 3.124084
+  type: 'test'
+  ...
+# Subtest: failed final persistence is visible as uncertainty before reattach
+ok 45 - failed final persistence is visible as uncertainty before reattach
+  ---
+  duration_ms: 2.521875
+  type: 'test'
+  ...
+1..45
+# tests 45
+# suites 0
+# pass 45
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 803.786583

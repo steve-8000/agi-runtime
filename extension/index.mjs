@@ -62,7 +62,7 @@ export default function runtimeExtension(pi){
   pi.on('session_shutdown',()=>teardown());
   // Compaction drops the transcript. Re-read the bank at once so decisions queued in this
   // session can be surfaced on the recovery card instead of being silently lost.
-  for(const name of ['session_compact','auto_compaction_end'])pi.on(name,(_e,ctx)=>{if(runtime){runtime.resume=true;void sampleMemory(ctx,true);}});
+  for(const name of ['session_compact','auto_compaction_end'])pi.on(name,async(_e,ctx)=>{if(runtime){runtime.resume=true;await sampleMemory(ctx,true);}});
   pi.on('goal_updated',e=>runtime?.mirror(e.goal??null));
   pi.on('tool_call',e=>runtime?.intent(e));
   pi.on('tool_execution_start',e=>runtime?.start({...e,input:e.args}));
@@ -74,12 +74,12 @@ export default function runtimeExtension(pi){
     if(!runtime||!Array.isArray(e.messages))return;
     try{return {messages:projectContext(e.messages,runtime)};}catch(error){warn('Runtime context projection skipped; native context unchanged.');}
   });
-  // No session_stop, sendMessage, sendUserMessage or triggerTurn. Native OMP GoalRuntime is the only loop.
+  // No session_stop, sendMessage, sendUserMessage or triggerTurn. Native OMP agentLoop owns continuation.
   if(typeof pi.registerTool!=='function'||!pi.zod)return;
   const z=pi.zod;
   const requireRuntime=()=>{if(!runtime)throw new Error(`RUNTIME_UNAVAILABLE ${contractMissing.join(',')}`);return runtime;};
   pi.registerTool({name:'runtime_status',label:'Runtime status',approval:'read',description:'Read current observation/recovery state and action IDs. offset pages recent and uncertain actions; no content is proof of remote state.',parameters:z.object({offset:z.number().int().min(0).optional(),refresh:z.boolean().optional()}),
-    async execute(_id,p,_signal,_update,ctx){if(p.refresh)await recover(ctx);return reply({...requireRuntime().status(p.offset??0),version:VERSION,contractMissing});}});
+    async execute(_id,p,_signal,_update,ctx){if(p.refresh){await recover(ctx);await sampleMemory(ctx,true);}return reply({...requireRuntime().status(p.offset??0),version:VERSION,contractMissing});}});
   pi.registerTool({name:'runtime_checkpoint',label:'Save checkpoint',approval:'write',description:'Save a short recovery summary and next action. Not a completion gate or canonical memory.',parameters:z.object({summary:z.string(),nextAction:z.string()}),
     async execute(_id,p){return reply(requireRuntime().checkpoint(p));}});
   pi.registerTool({name:'runtime_evidence',label:'Source evidence',approval:'read',description:'Optional file-range identity receipt. Hashes establish identity, not semantic truth. Ordinary edits do not need this tool.',parameters:z.object({path:z.string(),start:z.number().int().min(1),end:z.number().int().min(1)}),

@@ -1,0 +1,49 @@
+{
+  "status": "PASS",
+  "model": "openai-codex/gpt-6-astra",
+  "runtimeVersion": "0.5.0",
+  "scope": "real OMP, native edits/execution, lazy-intel discovery and backend calls; no production changes",
+  "durationMs": 78509,
+  "checks": {
+    "processExited": true,
+    "attached": true,
+    "sharpshooter": true,
+    "oneIntelligenceTool": true,
+    "nativeMultiTurn": true,
+    "intelligenceBackends": true,
+    "intelligenceReadOnly": true,
+    "nativeVerification": true,
+    "repairedBehavior": true,
+    "verifierUnchanged": true,
+    "runtimeHealthy": true
+  },
+  "modelTurns": 8,
+  "operations": [
+    "search",
+    "architecture",
+    "references"
+  ],
+  "toolNames": [
+    "read",
+    "todo",
+    "mcp__lazy_intel_code_intel",
+    "bash",
+    "edit",
+    "runtime_status"
+  ],
+  "memory": {
+    "backend": "sharpshooter",
+    "active": true,
+    "scope": "workspace-wntj6np6r70k"
+  },
+  "runtimeStatus": {
+    "health": "healthy",
+    "version": "0.5.0",
+    "totalUnknown": 0
+  },
+  "fixtureBeforeExit": 1,
+  "fixtureAfterExit": 0,
+  "processExit": 0,
+  "processError": null,
+  "stderr": ""
+}

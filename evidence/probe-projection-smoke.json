@@ -1,0 +1,12 @@
+{
+  "before": {
+    "gateExit": 1,
+    "rawModelExposed": true,
+    "realModelCalled": false
+  },
+  "after": {
+    "gateExit": 1,
+    "rawModelExposed": false,
+    "realModelCalled": false
+  }
+}

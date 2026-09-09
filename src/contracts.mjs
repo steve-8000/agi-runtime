@@ -1,34 +1,23 @@
-import { check, digest } from './util.mjs';
+import { check, digest, rejectObviousSecrets } from './util.mjs';
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.5.0';
 export const STATE_TYPE = 'clab.runtime.state.v3';
 export const OLD_STATE_TYPES = new Set([STATE_TYPE, 'agi-runtime-state']);
-// Sharpshooter writes decision memory itself from user turns and exposes no tool, so the
-// default deployment has no memory call to classify. The lists stay configurable: an
-// operator who mounts a memory MCP still gets secret refusal and unknown-write deferral.
-export const DEFAULTS = Object.freeze({
-  memoryReadTools: [],
-  memoryWriteTools: [],
-  searchTools: ['mcp__zvec_grep_search'],
-});
-export const READ = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'runtime_status', 'runtime_evidence']);
+// Intelligence maintains derived indexes, not user source or canonical memory.
+// Keep the mounted identity read-only even with an older operator config.
+export const INTELLIGENCE_TOOL = 'mcp__lazy_intel_code_intel';
+const EMPTY_CONFIG = Object.freeze({});
+export const READ = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'runtime_status', 'runtime_evidence', INTELLIGENCE_TOOL]);
 // Control flow must remain available during recovery. No generic task worker is enabled here.
 export const CONTROL = new Set(['goal', 'todo', 'ask', 'task', 'yield', 'hub', 'advise', 'runtime_checkpoint', 'runtime_reconcile']);
-const LEGACY = new Set(['mode', 'blockOnUnknown', 'headlessEffects', 'requireApproval', 'structuredOperationTools', 'targets', 'recall', 'maxToolCalls', 'maxEffects', 'maxWallMs']);
+const LEGACY = new Set(['searchTools', 'memoryReadTools', 'memoryWriteTools', 'mode', 'blockOnUnknown', 'headlessEffects', 'requireApproval', 'structuredOperationTools', 'targets', 'recall', 'maxToolCalls', 'maxEffects', 'maxWallMs']);
 export function config(raw = {}, warn = () => {}) {
   check(raw && typeof raw === 'object' && !Array.isArray(raw), 'INVALID_RUNTIME_CONFIG');
   for (const k of Object.keys(raw)) {
     if (LEGACY.has(k)) warn(`Ignored retired runtime option: ${k}`);
-    else check(k in DEFAULTS, 'UNKNOWN_RUNTIME_OPTION', k);
+    else check(false, 'UNKNOWN_RUNTIME_OPTION', k);
   }
-  const out = {};
-  for (const k of Object.keys(DEFAULTS)) {
-    const value = raw[k] ?? DEFAULTS[k];
-    check(Array.isArray(value) && value.every(x => typeof x === 'string' && /^[A-Za-z0-9_-]+$/.test(x)), 'INVALID_TOOL_LIST', k);
-    out[k] = Object.freeze([...new Set(value)]);
-  }
-  check(!out.memoryReadTools.some(t => out.memoryWriteTools.includes(t)), 'OVERLAPPING_MEMORY_TOOLS');
-  return Object.freeze(out);
+  return EMPTY_CONFIG;
 }
 export function effectiveCall(call) {
   let tool = call.toolName, input = call.input ?? {}, envelope = false;
@@ -46,31 +35,19 @@ export function effectiveCall(call) {
   }
   return { tool, input, envelope };
 }
-export function classify(call, cfg) {
+export function classify(call) {
   const e = effectiveCall(call);
-  if (cfg.memoryWriteTools.includes(e.tool)) return { ...e, kind: 'memory-write', scope: 'memory' };
-  if (cfg.memoryReadTools.includes(e.tool)) return { ...e, kind: 'memory-read', scope: 'read' };
-  if (READ.has(e.tool) || cfg.searchTools.includes(e.tool)) return { ...e, kind: 'read', scope: 'read' };
+  if (READ.has(e.tool)) return { ...e, kind: 'read', scope: 'read' };
   if (CONTROL.has(e.tool)) return { ...e, kind: 'control', scope: 'control' };
   return { ...e, kind: 'workspace-write', scope: 'workspace' };
 }
-export const isEffect = op => op.scope === 'memory' || op.scope === 'workspace';
+export const isEffect = op => op.scope === 'workspace';
 export const logicalId = (session, call, op) => digest({ session, call: call.toolCallId, tool: op.tool });
 export const wireId = call => `${call.toolCallId}\0${call.toolName}`;
-export function protocolBody(result) {
-  if (result?.structuredContent?.protocol_version === 1) return result.structuredContent;
-  const text = result?.content?.find(p => p?.type === 'text')?.text;
-  if (typeof text !== 'string') return undefined;
-  try { const body = JSON.parse(text); return body?.protocol_version === 1 ? body : undefined; }
-  catch { return undefined; }
-}
-export function observation(result, isError, kind) {
-  const body = (kind === 'memory-read' || kind === 'memory-write') ? protocolBody(result) : undefined;
+export function observation(result, isError) {
   const exit = result?.details?.exitCode;
-  const failed = !!isError || (typeof exit === 'number' && exit !== 0) || typeof body?.error === 'string';
-  const ack = body && typeof body.id === 'string' && (['inserted','duplicate','superseded'].includes(body.status) || typeof body.expired === 'boolean');
-  const ambiguous = kind === 'memory-write' && !ack;
-  return { failed, ambiguous, exit: typeof exit === 'number' ? exit : null, hash: digest({ failed, exit: exit ?? null, content: result?.content ?? null }) };
+  const failed = !!isError || !!result?.isError || (typeof exit === 'number' && exit !== 0);
+  return { failed, exit: typeof exit === 'number' ? exit : null, hash: digest({ failed, exit: exit ?? null, content: result?.content ?? null }) };
 }
 export function reduceGroup(group) {
   const parts = [...group.parts.values()];
@@ -78,8 +55,8 @@ export function reduceGroup(group) {
   const anyFailure = obs.some(x => x.failed);
   const conflict = parts.some(p => p.result && p.end && (p.result.failed !== p.end.failed || p.result.exit !== p.end.exit));
   const complete = parts.length > 0 && parts.every(p => p.started ? !!p.end : !!(p.result || p.end));
-  // An errored memory write may have committed; semantic dedup is not an exact request-key guarantee. Failure-wins alone would permit a blind retry.
-  const uncertain = isEffect(group.op) && (group.changed || (group.op.kind === 'memory-write' && (anyFailure || obs.some(x => x.ambiguous))));
+  // An input revision makes effects uncertain; a tool failure alone is not proof of rollback.
+  const uncertain = isEffect(group.op) && group.changed;
   return { state: uncertain ? 'unknown' : anyFailure ? 'failed' : complete ? 'succeeded' : 'executing', conflict,
     quality: parts.some(p => !p.started) ? 'includes-result-only' : 'start-and-end',
     complete, outcome: digest(obs) };
@@ -93,4 +70,33 @@ export function clipBytes(value, max) {
   const suffix = '…'; let out = '';
   for (const c of text) { if (Buffer.byteLength(out + c + suffix) > max) break; out += c; }
   return out + suffix;
+}
+// Public command diagnostics are bounded and share the existing secret-hygiene policy.
+export function diagnosticText(value, lines = 12) {
+  const text = String(value ?? '');
+  try { rejectObviousSecrets(text); }
+  catch { return '[diagnostic omitted: possible secret]'; }
+  return clipBytes(text.trim().split('\n').filter(Boolean).slice(-lines).join('\n'), 2048);
+}
+// Child output is opaque. Only this fixed, typed summary crosses the public gate boundary.
+export function publicProbe(probe) {
+  if (!probe || typeof probe !== 'object' || Array.isArray(probe)) return null;
+  const checks = {};
+  let passed = probe.status === 'PASS';
+  for (const name of ['processExited', 'attached', 'sharpshooter', 'oneIntelligenceTool', 'oneIndexLifecycle', 'nativeMultiTurn', 'intelligenceBackends', 'intelligenceReadOnly', 'nativeVerification', 'repairedBehavior', 'verifierUnchanged', 'runtimeHealthy']) {
+    checks[name] = probe.checks?.[name] === true;
+    passed &&= checks[name];
+  }
+  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  return {
+    status: passed ? 'PASS' : 'FAIL', model: '<configured>',
+    runtimeVersion: probe.runtimeVersion === VERSION ? VERSION : null,
+    durationMs: count(probe.durationMs), modelTurns: count(probe.modelTurns), checks,
+    runtimeStatus: {
+      health: probe.runtimeStatus?.health === 'healthy' ? 'healthy' : probe.runtimeStatus?.health === 'degraded' ? 'degraded' : null,
+      version: probe.runtimeStatus?.version === VERSION ? VERSION : null,
+      totalUnknown: count(probe.runtimeStatus?.totalUnknown),
+    },
+    fixtureBeforeExit: count(probe.fixtureBeforeExit), fixtureAfterExit: count(probe.fixtureAfterExit), processExit: count(probe.processExit),
+  };
 }

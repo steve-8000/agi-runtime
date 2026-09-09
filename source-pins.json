@@ -1,27 +1,38 @@
 {
-  "date": "2026-09-08",
-  "packageVersion": "0.4.0",
-  "delivery": "local integration candidate; installed on this host via the existing extension symlink, not pushed",
+  "date": "2026-09-09",
+  "packageVersion": "0.5.0",
+  "delivery": "active host extension checkout; OMP owns main model selection and execution; local changes not pushed",
   "sources": {
-    "runtime": "steve-8000/agi-runtime@580f0e52b67769acc3642053f167eaaf60d2c7ad",
-    "omp": "can1357/oh-my-pi@v18.1.11",
-    "zvec": "zvec-ai/zvec-grep@52653951b24617762f4ab0c71c34d594e5001617",
-    "sharpshooter": "can1357/oh-my-pi@v18.1.11 installed binary (packages/coding-agent/src/sharpshooter/*, memory-backend/runtime.ts)"
+    "runtimeBaseline": "4d50040 Replace gbrain memory wiring with Sharpshooter bank observation",
+    "omp": "can1357/oh-my-pi@v18.1.11; /opt/homebrew/Cellar/omp/18.1.11/bin/omp",
+    "lazyIntel": "dff2e3e69560adf4333d3d33c76868c765e6a417; /Users/steve/lazy-project/lazy-intel; version 0.2.0",
+    "zvec": "@zvec/zvec-grep@0.2.1 through lazy-intel",
+    "codegraph": "@colbymchenry/codegraph@1.6.0 through lazy-intel",
+    "serena": "installed Serena MCP selected by lazy-intel; version not pinned by this repository",
+    "sharpshooter": "OMP v18.1.11 native backend; current host memory.backend=sharpshooter"
   },
-  "scope": "GitHub source, the installed OMP binary and official contract reads; no complete upstream checkout or live host execution beyond this machine",
   "decisions": {
-    "taskWorkerEnabled": false,
     "mainOwnsWrites": true,
+    "mainModelOwner": "OMP native default; runtime and smoke scripts do not select a model or reasoning level",
+    "integrationPrinciple": "thin connections only; the agent freely combines native memory, lazy-intel and OMP tools without a second orchestrator or forced workflow",
+    "taskWorkerEnabled": false,
+    "memoryOwner": "OMP Sharpshooter only",
+    "unreadableMemoryObservation": "null, never a healthy empty or partial queue",
+    "publicDiagnostics": "2048-byte bounded tails with existing obvious-secret hygiene; no automatic raw traces",
+    "publicProbe": "fixed typed allowlist; model masked; opaque child fields and live child streams omitted",
+    "normalGate": "runtime, extension, memory and installer tests",
+    "intelligenceOwner": "lazy-intel only; one exposed code_intel tool",
+    "indexLifecycleOwner": "lazy-intel; standalone zvec-autoindex extension retired",
     "runtimeApprovalPrompts": false,
     "workBudgets": false,
     "recallGate": false,
     "secondModelLoop": false,
     "searchInputRewriting": false,
-    "kubernetesPolicy": "preserve existing hook and exact headless/target rules",
-    "memoryUnknown": "Sharpshooter exposes no memory tool; default memory tool lists are empty. Deferral applies only to an operator-configured memory MCP.",
-    "workspaceUnknown": "advisory; inspect current state before continuing",
-    "context": "single detached request projection; own-message dedup only",
-    "processRestart": "external host responsibility, not implemented",
-    "decisionMemory": "read-only bank observation via ctx.memory scope; surface unconsolidated deltas on resume and consolidation errors only; never re-inject consolidated content, never write"
+    "toolClassificationOverride": false,
+    "context": "zero steady projection; action-changing recovery state only",
+    "workspaceUnknown": "advisory; real target read-back before retry",
+    "historicalMemoryUnknown": "preserved; local reads cannot reconcile a retired external-memory scope",
+    "kubernetesPolicy": "unchanged; no cluster mutations performed",
+    "processRestart": "native session resume/external host responsibility; no added supervisor"
   }
 }

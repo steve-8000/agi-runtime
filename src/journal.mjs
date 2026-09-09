@@ -65,16 +65,12 @@ export class Journal {
   paused(workspace){return this.db.prepare('SELECT paused FROM workspaces WHERE id=?').get(workspace)?.paused===1;}
   setPaused(lease,paused){this.tx(()=>{this.assert(lease);this.db.prepare('UPDATE workspaces SET paused=? WHERE id=?').run(+paused,lease.workspace);this.emit(lease.workspace,paused?'runtime.paused':'runtime.resumed',{session:lease.session});});}
   row(id) { return this.db.prepare('SELECT rowid AS serial,* FROM actions WHERE id=?').get(id); }
-  begin(lease, group, ref, memoryTools) {
+  begin(lease, group, ref) {
     if (group.effect) this.tx(() => this.sweep(lease.workspace));
     return this.tx(() => {
       this.assert(lease);
       check(!this.row(group.id), 'DUPLICATE_ACTION');
       const scope = group.op.scope;
-      if (group.op.scope === 'memory') {
-        const unknown = this.unknown(lease.workspace, memoryTools).filter(a => a.scope === scope);
-        check(unknown.length === 0, 'RECONCILIATION_REQUIRED', `scope=${scope}; inspect runtime_status and read back, then runtime_reconcile. Unrelated scopes remain available.`);
-      }
       const now = this.now();
       this.db.prepare('INSERT INTO actions(id,workspace,session,epoch,tool,input_hash,is_effect,state,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)').run(group.id, lease.workspace, lease.session, lease.epoch, group.op.tool, group.inputHash, +group.effect, 'executing', now, now);
       this.db.prepare('UPDATE sessions SET tool_calls=tool_calls+1,effects_used=effects_used+?,updated=? WHERE id=?').run(+group.effect, now, lease.session);
@@ -91,9 +87,11 @@ export class Journal {
       this.emit(lease.workspace, 'action.observed', { actionId: group.id, state: reduced.state, conflict: reduced.conflict, quality: reduced.quality });
     });
   }
-  unknown(workspace, memoryTools) {
-    return this.db.prepare("SELECT id,tool,session,updated FROM actions WHERE workspace=? AND state='unknown' ORDER BY updated,id").all(workspace)
-      .map(r => ({ ...r, scope: memoryTools.includes(r.tool) ? 'memory' : 'workspace' }));
+  unknown(workspace) {
+    return this.db.prepare(`SELECT a.id,a.tool,a.session,a.updated,
+      COALESCE((SELECT json_extract(e.payload,'$.scope') FROM events e WHERE e.workspace=a.workspace
+        AND e.kind='action.started' AND json_extract(e.payload,'$.actionId')=a.id ORDER BY e.seq DESC LIMIT 1),'workspace') AS scope
+      FROM actions a WHERE a.workspace=? AND a.state='unknown' ORDER BY a.updated,a.id`).all(workspace);
   }
   blocked(lease, ref, reason) { this.emit(lease.workspace, 'action.blocked', { ref, reason }); }
   checkpoint(lease, data) { this.tx(() => { this.assert(lease); this.db.prepare('UPDATE sessions SET checkpoint=?,updated=? WHERE id=?').run(stable(data), this.now(), lease.session); this.emit(lease.workspace, 'checkpoint.saved', { session: lease.session }); }); }
@@ -104,14 +102,17 @@ export class Journal {
     const r = this.db.prepare("SELECT payload FROM events WHERE workspace=? AND kind='action.started' AND json_extract(payload,'$.actionId')=? ORDER BY seq DESC LIMIT 1").get(workspace, actionId);
     return r ? JSON.parse(r.payload).ref ?? null : null;
   }
-  reconcile(lease, ids, readbackIds, observed, memoryReads, memoryWrites) {
+  reconcile(lease, ids, readbackIds, observed) {
     this.tx(() => {
       this.assert(lease);
       const rows = ids.map(id => this.row(id));
       check(rows.length > 0 && rows.every(r => r?.workspace === lease.workspace && r.state === 'unknown'), 'ACTION_STATE_CONFLICT');
+      // Preserve old observations without pretending local reads certify a retired external service.
+      const unknown = new Map(this.unknown(lease.workspace).map(a => [a.id,a]));
+      check(rows.every(r => unknown.get(r.id)?.scope === 'workspace'), 'RETIRED_ACTION_SCOPE');
       const reads = readbackIds.map(id => this.row(id));
       for (const row of rows) {
-        check(reads.some(r => r?.workspace === lease.workspace && r.is_effect === 0 && r.state === 'succeeded' && r.created >= row.updated && r.serial > row.serial && (!memoryWrites.includes(row.tool) || memoryReads.includes(r.tool))), 'READBACK_REFERENCE_REQUIRED');
+        check(reads.some(r => r?.workspace === lease.workspace && r.is_effect === 0 && r.state === 'succeeded' && r.created >= row.updated && r.serial > row.serial), 'READBACK_REFERENCE_REQUIRED');
       }
       for (const row of rows) {
         this.db.prepare("UPDATE actions SET state='reconciled',updated=? WHERE id=?").run(this.now(), row.id);

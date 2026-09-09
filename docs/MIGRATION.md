@@ -1,42 +1,47 @@
-# 기존 runtime에서 전환
+# 0.5 Cutover
 
-이 패키지는 `580f0e52…` 위에 이미 커밋된 변경이 아니다. 새 0.4.0 구현 후보이며 실제 OMP integration 검증 후 기존 한 개의 extension을 교체한다. 병렬로 두 runtime을 로드하면 이벤트/lease가 충돌할 수 있다.
+## 기준과 현재 상태
 
-## 제거 및 유지
+활성 0.4 Sharpshooter 구현 `4d50040`을 이 checkout으로 fast-forward한 뒤 0.5 변경을 적용했다. 기존 사용자 작업을 다른 구현으로 덮지 않았다. 이 호스트의 `~/.omp/agent/extensions/agi-runtime` symlink를 현재 checkout으로 전환했고 실제 새 OMP 프로세스에서 0.5.0 로드를 확인했다. 이미 실행 중인 세션은 시작 시 로드한 extension을 유지한다.
 
-제거: execution budgets, requireApproval/structuredOperationTools 중복 승인, 회상 강제 gate, memory outbox transport, 세션 종료 시 note 압박, 반복 상태 append.
+두 runtime extension을 동시에 설치하지 않는다. 모델 루프·메모리·인덱스 소유자를 복제하지 않는다.
 
-유지: 기존 OMP loop와 model roles, task worker 비활성, K8s hook, zvec MCP, source evidence primitive, 기존 SQLite 데이터, 운영자가 memory tool을 설정한 경우의 read-back 복구.
+## 실제 호스트 변경
 
-`~/.omp/runtime/config.json`은 `memoryReadTools`, `memoryWriteTools`, `searchTools` 세 키만 갖는다. 다른 키가 남아 있으면 로드를 막지는 않지만 매 시작마다 경고를 내므로 지운다.
+| 대상 | 적용 |
+|---|---|
+| `~/.omp/agent/extensions/agi-runtime` | `/Users/steve/orca/workspaces/omp-agi-runtime/scallop`으로 활성화 |
+| `~/.omp/runtime/config.json` | `{}`; 도구 read 분류는 고정 identity이며 override 없음 |
+| `~/.omp/agent/AGENTS.md` | 완료 전 네이티브 루프 지속, 현재 code_intel 입력·JS cross-file semantics 규칙 명시 |
+| `~/.omp/agent/rules/search-routing.md` | standalone zvec 우선 규칙을 lazy-intel 단일 경로로 교체 |
+| `~/.omp/agent/extensions/zvec-autoindex.ts` | `~/.omp/runtime/retired/zvec-autoindex.ts`로 이동; 삭제하지 않음 |
 
-0.4에서 추가된 것: OMP Sharpshooter bank의 read-only 관측. `ctx.memory.status()`의 `scope`로 bank를 찾아 미통합 delta와 consolidation 오류만 읽는다. 새 dependency, 새 타이머, 쓰기 경로는 없다.
+MCP launch와 `memory.backend=sharpshooter`는 이미 맞는 호스트 설정을 유지했다. `config/AGENTS.md`, `config/rules/`, `config/mcp.json`은 현재 계약을 추적하는 비밀 없는 사본이다. 설치기가 이 파일들을 사용자 홈에 무조건 복사하지 않는다.
 
-변경: 결과 first-wins를 관측 합산으로, xd envelope+child를 logical action 하나로, workspace unknown을 전역 차단 대신 복구 안내로, DB 장애를 degraded + managed retry로, 컨텍스트를 단일 projection으로.
+## 다른 호스트 적용
 
-## 데이터
+1. 설치된 OMP 버전과 extension event 계약을 확인한다. 이번 검증은 OMP 18.1.11이다.
+2. 활성 사용자 AGENTS와 `config/AGENTS.md`의 정책 변경만 병합한다. 사용자 고유 정책·credentials·승인 hook을 보존한다.
+3. lazy-intel MCP 하나에서 `tools/list`가 `code_intel` 하나를 내놓는지 확인한다. standalone zvec/CodeGraph/Serena MCP와 경쟁 auto-index extension을 비활성화한다. 하위 backend 자체는 lazy-intel이 실행할 수 있어야 한다.
+4. `memory.backend=sharpshooter`를 유지한다. 외부 memory MCP와 수동 bank 쓰기를 도입하지 않는다.
+5. runtime config를 `config/runtime.json`에 맞춘다. 사라진 memory gate/budget 키는 무시되며 경고되므로 정리한다.
+6. `node scripts/install.mjs`의 target을 읽은 뒤 `--activate`한다. 새 프로세스로 `node scripts/upgrade-check.mjs --live`를 실행한다. 모델과 reasoning 설정은 OMP 메인 기본값을 그대로 사용한다.
 
-journal schema 2/3/4를 읽는다. 필요한 schema4 테이블/인덱스를 만들되 legacy outbox/approvals의 데이터를 삭제하지 않는다. 원래 파일은 같은 runtime journals 위치에 유지한다. 이미 존재하는 v4의 drop된 데이터는 복구할 수 없다.
+이 설치기는 OMP/lazy-intel/Serena를 다운로드하거나 credentials를 배포하지 않는다. `config/mcp.json`의 절대 실행 경로는 이 호스트의 값이다. 다른 호스트는 실제 설치 경로에 맞춘다.
 
-새 action ID는 논리 호출 기준이다. 새 events에 `semantics: logical-v3`를 남긴다. 이전의 physical-call 카운트와 새 logical effects를 무조건 같은 의미로 합산하지 않는다. 이전 records에 없는 source reference를 만들어내지 않는다.
+## 데이터와 호환성
 
-기존 config의 예산/회상/중복 승인 키는 경고 후 무시한다. 새 production 설정은 tool identity 세 목록뿐이다. operator config를 자동으로 지우거나 auth/AGENTS/OMP settings를 덮어쓰지 않는다. 무시되는 이전 옵션이 있었다는 로그와 README를 확인한다. 새로운 이름의 비표준 MCP 도구는 그 실제 identity를 세 목록에 명시해야 한다.
+- 기존 SQLite journal, lease, native session transcript, checkpoints를 삭제하지 않는다.
+- retired external-memory unknown은 보존하되 로컬 read로 완료 인증하지 않는다. workspace 효과가 uncertain이면 실제 target을 읽고 `runtime_reconcile`한다.
+- memory queue/state는 OMP Sharpshooter만 쓴다. runtime은 backend scope를 따라 읽고 resume 시 최대 5개 미통합 결정만 비권위 데이터로 전달한다.
+- `.mjs` 프로젝트의 LSP 참조에 프로젝트 경계가 필요하므로 `jsconfig.json`을 추가했다. 빈 결과를 무호출 근거로 취급하지 않는다.
 
-## 전환 순서
+## Rollback 범위
 
-1. 이 디렉터리에서 `node --test tests/*.test.mjs`와 `node scripts/check.mjs` 실행.
-2. 실제 OMP 18.1.11에서 별도 임시 workspace와 runtime 디렉터리로 explicit extension load smoke를 수행. 현재 설치의 Kubernetes hook을 끄는 flag나 설정을 사용하지 않는다. 모델 호출이 든다. 실제 tool names와 protocol ack shape를 확인한다.
-3. 기존 `task.disabledAgents`에 `task`가 남아 있고, main sole-writer 정책과 existing K8s hook이 유지되는지 확인. modelRoles를 다시 설계하지 않는다.
-4. 같은 workspace의 이전 OMP 프로세스를 종료한 뒤 journal SQLite의 online backup 또는 WAL checkpoint 후 안전한 백업을 수행. 실행 중 DB 본체만 복사하면 WAL 데이터가 빠질 수 있다. 이 패키지는 DB를 자동 삭제/이동하지 않는다.
-5. `node scripts/install.mjs`로 경로 계획 확인. `node scripts/install.mjs --activate`로 기존 symlink 하나만 원자 교체. 프로파일은 `--agent-dir`로 명시한다. archive 임시 디렉터리가 아니라 유지할 checkout에서 실행한다.
-6. 새 OMP 프로세스로 기존 native session을 재개. `runtime_status`에서 health, 원본 참조, 불명 이력을 확인. 필요하면 에이전트가 read-back하고 계속한다.
+```sh
+node scripts/install.mjs --rollback
+```
 
-원격 GitHub 저장소 반영은 이 패키지의 `src/`, `extension/`, `scripts/`, `tests/`, 문서를 한 coherent commit으로 옮기는 별도 작업이다. 이전 테스트를 전부 실패한 채 버리는 대신 제거된 정책의 테스트는 제거 이유를 남기고, 유지하는 evidence/recovery 경계의 회귀는 보존한다.
+직전 extension symlink만 복구한다. 사용자 정책·runtime config·MCP·native OMP 버전은 되돌리지 않는다. 이전 target은 `/Users/steve/omp-agi-runtime`이었다. 구형 독립 zvec 인덱싱을 의도적으로 되살릴 경우에만 retired 파일을 원위치한다. lazy-intel과 동시 소유하게 만드는 기본 rollback은 권장하지 않는다.
 
-## rollback
-
-`node scripts/install.mjs --rollback`은 마지막 activation의 이전 symlink만 복구한다. DB/config/K8s hook은 그대로다. 복구한 extension은 새 OMP 프로세스에서 로드된다. 기존 version이 schema4를 지원하는지 먼저 확인한다. code rollback과 data rollback은 서로 다른 작업이며, 새 이력을 버리는 DB 덮어쓰기를 자동 수행하지 않는다.
-
-## 수행하지 않은 것
-
-install 테스트는 임시 디렉터리에서만 실행했다. Kubernetes와 origin/main은 변경하지 않았다. 0.4 cutover에서는 이 호스트의 `~/.omp/runtime/config.json`을 실제로 교체했다 — extension symlink는 이미 이 checkout을 가리키므로 소스 수정이 곧 설치본이며, 반영은 OMP 프로세스 재시작 시점이다.
+Kubernetes/Argo CD/production workload는 변경하지 않았다. 이 cutover가 다른 클러스터의 배포 승인으로 확장되지 않는다.

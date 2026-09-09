@@ -1,65 +1,117 @@
 {
-  "status": "local-tests-passed-live-attach-verified",
+  "status": "verified-thin-native-default-integration",
+  "runtimeVersion": "0.5.0",
   "host": {
     "platform": "darwin",
     "arch": "arm64",
     "node": "v26.7.0",
     "omp": "18.1.11"
   },
-  "tests": {
-    "passed": 65,
-    "failed": 0,
-    "real": [
-      "SQLite",
-      "temporary filesystem",
-      "temporary symlink install/rollback",
-      "temporary zsh rc file"
-    ],
-    "mocked": [
-      "OMP API and events",
-      "provider/tool execution",
-      "Kubernetes deny composition"
-    ]
-  },
-  "checks": {
-    "mjs_files": 19,
-    "configuration": "passed"
-  },
-  "measure": {
-    "iterations": 1000,
-    "hookCycleMs": {
-      "median": 0.29050000000000864,
-      "p95": 0.5342500000000001,
-      "max": 1.0049159999999802
-    },
-    "context": {
-      "steadyBytes": 539,
-      "stressResumeBytes": 2567,
-      "packingBoundBytes": 4096,
-      "runtimeMessagesAfter1000Builds": 1
-    },
-    "scope": "Synthetic hooks and real local SQLite; no real file/tool/provider execution, no Mac benchmark, no model tokens measured; storage cache affects latency"
-  },
-  "upgradeGate": {
-    "command": "node scripts/upgrade-check.mjs --live",
+  "gate": {
     "status": "PASS",
-    "ompVersion": "18.1.11",
-    "liveAttach": {
-      "journalsCreatedByProbe": 1,
-      "probeReply": "done"
-    },
-    "scope": "one real `omp -p` in a scratch workspace and runtime dir; proves discovery, import and attach under the installed binary"
+    "evidence": "upgrade-check.json",
+    "command": "node scripts/upgrade-check.mjs --json --live",
+    "packageTestsPassed": 54,
+    "packageTestsFailed": 0,
+    "packageTestsSkipped": 0,
+    "installerIncluded": true,
+    "parserFiles": 17,
+    "liveProbe": true,
+    "modelSelection": "OMP main default; no model or reasoning override",
+    "liveModelTurns": 12
   },
-  "unchanged": [
-    "OMP settings and updater",
-    "Kubernetes policy/hook",
-    "runtime config keys",
-    "MCP credentials",
-    "zvec index"
+  "separateChecks": {
+    "installer": {
+      "passed": 6,
+      "failed": 0
+    },
+    "retiredSearchPauseRegression": {
+      "beforeFix": "FAIL: mutation bypassed pause",
+      "afterFix": "PASS",
+      "cases": 1
+    },
+    "foreignBankRetentionRegression": {
+      "beforeFix": "FAIL: foreign architecture.md deleted (ENOENT)",
+      "afterFix": "PASS",
+      "cases": 1
+    },
+    "memoryIo": {
+      "beforeFix": "FAIL: EACCES reported as a healthy empty queue",
+      "afterFix": "PASS: null until permissions recover",
+      "realFilesystemPaths": [
+        "queue",
+        "session-queue",
+        "delta-file"
+      ],
+      "evidence": "memory-io-smoke.json"
+    },
+    "publicDiagnostics": {
+      "multilineCredentialWithheld": true,
+      "maxUtf8Bytes": 2048,
+      "validUtf8": true,
+      "rawTraceExport": false
+    },
+    "publicProbeProjection": {
+      "evidence": "probe-projection-smoke.json",
+      "stage": "before removal of the model selector option",
+      "before": {
+        "gateExit": 1,
+        "rawModelExposed": true
+      },
+      "after": {
+        "gateExit": 1,
+        "rawModelExposed": false
+      },
+      "realModelCalled": false,
+      "typedAllowlistRegression": "PASS"
+    }
+  },
+  "nativeMemory": {
+    "extracted": true,
+    "consolidated": true,
+    "injected": true,
+    "answered": true,
+    "evidence": "live-memory.json"
+  },
+  "review": {
+    "materialFindings": 1,
+    "fixed": 1,
+    "narrowP1ReReview": "no remaining material defect",
+    "followupMemoryIoAndDiagnostics": "no material defects",
+    "publicProbeFocused": "no material defects",
+    "nativeDefaultCorrection": "no material defects"
+  },
+  "verificationOrder": "Initial 45-test/16-turn and later 53-test/14-turn explicitly selected model runs are historical. The public-probe repair passed the 54-test non-live gate. After removing model and reasoning overrides, the existing gate passed 54 cases and a real 12-turn native-default OMP execution. No new test or runtime layer was added for this correction.",
+  "isolation": "Real host OMP/config/credentials. Source/session/journal use scratch. Native memory can create a scratch-scope host bank; the probe never deletes a child-reported bank path.",
+  "activation": "~/.omp/agent/extensions/agi-runtime -> /Users/steve/orca/workspaces/omp-agi-runtime/scallop; new OMP processes verified at 0.5.0",
+  "cleanup": "Earlier four verified synthetic host banks and temporary fixtures were removed. The unneeded native-default synthetic fixture was removed without executing it. The latest live probe removes only its own scratch tree; any native scratch-scope host bank remains owned by Sharpshooter and was not inspected or deleted. User banks preserved; intel-contract-probe exited.",
+  "notPerformed": [
+    "Git commit or push of this change",
+    "Kubernetes mutation",
+    "production workload rollout",
+    "OS crash restart",
+    "all-model or long-horizon reliability proof"
   ],
-  "changedOnThisHost": [
-    "~/.omp/agent/extensions/agi-runtime symlink -> this checkout",
-    "~/.zshrc managed ompupdate block",
-    "~/.omp/runtime/config.json holds the three current keys"
-  ]
+  "historicalExplicitModelGate": {
+    "status": "PASS",
+    "evidence": "memory-io-upgrade-check.json",
+    "packageTestsPassed": 53,
+    "liveModelTurns": 14,
+    "note": "Historical explicit selector run, not proof of the native default path"
+  },
+  "historicalExplicitModelRuns": [
+    {
+      "model": "openai-codex/gpt-6-astra",
+      "status": "PASS",
+      "turns": 8,
+      "evidence": "live-astra.json"
+    },
+    {
+      "model": "anthropic/claude-fable-5-1",
+      "status": "PASS",
+      "turns": 5,
+      "evidence": "live-fable.json"
+    }
+  ],
+  "integrationPrinciple": "OMP owns default model and execution; the agent freely combines Sharpshooter, lazy-intel and native tools. No second orchestrator, forced workflow or extra gate."
 }

@@ -1,56 +1,34 @@
-# 소스 근거와 설계 판단
+# Source Audit — OMP 18.1.11 / Runtime 0.5
 
-기준일 2026-09-06. GitHub connector로 버전/파일/commit을 읽었다. 전체 repository clone이나 실제 Mac 설치 검증을 수행했다고 주장하지 않는다. 아래 링크는 source reference이며 런타임에서 네트워크로 호출하는 dependency가 아니다.
+현재 workspace·설치 상태를 우선한다. 아래 소스는 소유권과 event 계약의 근거이며 실행 검증은 `evidence/` 및 [VERIFICATION.md](VERIFICATION.md)에 분리한다.
 
-## 고정 근거
+## OMP native loop
 
-| 대상 | 기준 | 확인 내용 |
-|---|---|---|
-| steve-8000/agi-runtime | 580f0e52b67769acc3642053f167eaaf60d2c7ad | main ref, 최신 수정 diff, source-pins, evidence primitive, 기존 설계/검토 이력 |
-| can1357/oh-my-pi | v18.1.11 | 최신 release 확인, extension event/public API, custom message/session 저장, CLI args |
-| zvec-ai/zvec-grep | 52653951b24617762f4ab0c71c34d594e5001617 | 최신 commit, MCP search/freshness 계약(기존 source 검토 포함) |
-| OMP Sharpshooter backend | v18.1.11 설치 바이너리 | `sharpshooter/{paths,queue,extract,consolidate,backend}.ts`, `memory-backend/runtime.ts`, settings schema. 설치본 자체에서 직접 확인 |
+- [agent-loop.ts](https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/agent/src/agent-loop.ts): 도구 결과를 다음 모델 호출에 넣는 내부/외부 루프, queued follow-up, bounded `pause_turn` 처리. extension이 매 turn마다 `sendMessage`나 `triggerTurn`을 호출할 필요가 없다.
+- `beforeModelCall.stop`, 사용자 abort, native deadline, terminal tool response 등은 종료 이유가 될 수 있다. provider 안전 승인을 우회해 계속하는 기능은 추가하지 않았다.
+- 실제 CLI `omp --help`: print mode, session resume, model/thinking 선택을 제공한다. end-to-end probe는 한 번의 `omp -p` 호출에서 여러 모델 턴과 실제 편집·실행을 관측했다. `--auto-approve`를 사용하지 않았다.
+- [extension types](https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/extensibility/extensions/types.ts): `BeforeAgentStartEvent.systemPrompt`는 **`string[]`**다. 테스트 observer가 문자열 `.includes()`로 해석하면 실제 주입을 놓친다. 모델 컨텍스트 검증은 각 segment 내용으로 수행해야 한다.
 
-## OMP: 구현에 직접 반영한 사실
+## Sharpshooter
 
-- https://github.com/can1357/oh-my-pi/blob/v18.1.11/docs/extensions.md
-- https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/session/messages.ts
-- https://github.com/can1357/oh-my-pi/blob/v18.1.11/docs/session.md
-- https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/cli/args.ts
+- [backend.ts](https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/sharpshooter/backend.ts): `message_start`의 committed user prompt에서 extraction을 시작한다. startup race는 최신 user message로 catch-up한다. `taskDepth > 0`의 subagent는 제외한다.
+- [extract.ts](https://github.com/can1357/oh-my-pi/blob/v18.1.11/packages/coding-agent/src/sharpshooter/extract.ts): 비동기 extraction, 검증 가능한 원문 evidence를 가진 delta만 queue에 저장, 짧은 print 세션 dispose에서 bounded flush. 모델 응답이 즉시 끝나는 테스트에서 비동기 작업 수명을 충분히 관측하지 않으면 false negative가 가능하다.
+- backend `buildDeveloperInstructions`: `architecture.md`, `product.md`, `style.md` 중 채워진 문서를 읽어 injection token limit 안에서 developer instructions를 구성한다.
+- scheduler/consolidator: OMP가 queue와 consolidation lock, 통합 state와 문서 replacement를 소유한다. runtime은 `ctx.memory.status()`가 알려 준 scope만 읽는다.
+- 실제 `omp config get memory.backend`는 `sharpshooter`. 모델 smoke 두 개에서 backend active를 관측했다. 설정만으로 추출/통합/주입 PASS라고 판단하지 않는다.
 
-Public context handler는 provider용 messages의 detached copy를 다룬다. 그래서 자체 projection만 요청 단위로 교체한다. Native transcript를 반복 수정하거나 provider payload 전체를 가로채지 않는다.
+## lazy-intel
 
-tool_result는 extension 순서대로 수정될 수 있다. 원시 결과 보장을 버리고 ‘이 extension이 관측한 결과’로 명명했다. start/end 없는 호출을 같은 수준의 입력검증으로 간주하지 않는다.
+현재 호스트 `/Users/steve/lazy-project/lazy-intel`, commit `dff2e3e69560adf4333d3d33c76868c765e6a417`, version 0.2.0.
 
-getAllTools/getActiveTools는 공식 API에 존재한다. 그러나 실제 노출/활성/동적 discovery는 호스트 상태와 다르므로 이 패키지는 ‘도구가 연결됐다’를 config 문자열만으로 보증하지 않는다. 실제 OMP 적용에서는 해당 API와 현재 tools/list를 조회한다.
+- `src/mcp/server.js`: `tools/list`는 `[TOOL]`, `tools/call`은 `code_intel`만 받는다. 실제 stdio initialize/tools-list 응답을 `evidence/intelligence-tools.json`에 저장했다.
+- `src/engine.js`: operation별 query/symbol 검증과 backend routing. `diagnostics`도 `query` 또는 `symbol`이 필요하며 Serena의 file input에는 `relativePath`를 준다. query를 생략한 호출은 protocol error였고 올바른 입력으로 diagnostics 호출 성공을 확인했다.
+- `src/backends/serena.js`: native LSP symbol/reference/implementation/diagnostics를 제공한다. JS 프로젝트 설정 없이 받은 빈 references는 호출자 부재의 증명이 아니었다. runtime `jsconfig.json` 추가 후 `config`의 kernel/extension/check/tests cross-file references를 실제로 반환했다.
+- graph `impact(Runtime)`는 현재 src/extension/scripts/tests 의존 관계를 반환했다. `diagnostics(src/contracts.mjs)`의 관측 결과는 `{}`였다. 이것을 프로젝트 전체 compiler 검증으로 확대 해석하지 않는다.
+- 호스트 MCP 설정은 standalone zvec/CodeGraph server를 disabled로 유지하며 lazy-intel 하나를 노출한다. 경쟁 `zvec-autoindex.ts`는 extension 로딩 디렉터리 밖으로 이동했다. backend package/process 여러 개가 실행되는 것과 OMP에 MCP 도구 여러 개를 노출하는 것은 다른 문제다.
 
-invokeTool은 same-name native builtin delegation이다. arbitrary MCP를 부르는 별도 bridge로 사용하지 않는다. managed timer는 수명과 오류 처리를 OMP에 맡긴다. session_stop/triggerTurn/sendUserMessage continuation은 사용하지 않는다.
+## Runtime boundaries
 
-Custom session record에는 type:title 슬롯이 앞설 수 있고 parentSession은 타입이 고정된 foreign key가 아니다. 그래서 임의 JSONL 위치나 parent ID를 추측하는 process supervisor를 만들지 않았다.
+`extension/index.mjs`는 native event를 journal/observer로 전달한다. kernel은 효과의 결과/불명 상태와 lease를 관리한다. context는 정상일 때 비어 있으며 복구 때만 action-changing 상태를 준다. 통합 memory의 재주입·독립 extraction·forced continuation은 없다.
 
-## Sharpshooter: 무엇을 읽어도 되고 무엇을 주장하면 안 되는가
-
-설치된 v18.1.11 바이너리에서 직접 확인한 사실만 사용한다.
-
-- extraction과 consolidation은 `sharpshooter.model` 하나를 공유하고, effort는 코드에 `Low`/`Medium`으로 고정되어 있다. selector에 `:high`를 붙여도 Sharpshooter는 그 값을 쓰지 않는다. 미설정 시 `smol` role로 떨어진다.
-- bank는 `<agentDir>/memories/sharpshooter/<bank id>/`이고 bank id는 cwd에서 파생된다. 파생식(`basename` slug + `Bun.hash`)을 재구현하지 않는다. `ctx.memory.status()`가 돌려주는 `scope`가 backend 자신이 쓰는 id이므로 그것만 사용한다.
-- 큐 파일은 `queue/<sessionId>/<ts base36>-<rand>.json`이고 delta는 `v:1`이다. 파일명이 시간 순 정렬이라는 성질에만 의존한다.
-- `state.json`은 `v:1`, `lastConsolidatedAt`, 선택적 `lastResult`/`lastError`다. shape이 다르면 관측을 null로 만들고 아무것도 주장하지 않는다. `lastError.message`는 backend가 `String(error)`로 저장한 provider/filesystem 원문이므로 모델 컨텍스트로 옮기지 않는다 — 고정 목록 분류값만 내보낸다.
-- extraction은 evidence 문자열이 실제 사용자 프롬프트의 부분문자열일 때만 delta를 받아들이고, friction gate와 consolidation이 delta를 버릴 수 있다. 따라서 “사용자가 말했으니 기억에 남는다”는 보장은 없다. 큐에 있다는 관측을 저장 보장으로 승격하지 않는다.
-- `taskDepth > 0`이면 backend가 아예 시작하지 않는다. subagent는 추출도 주입도 받지 않는다.
-- backend는 `save`를 구현하지 않는다. runtime은 기억을 쓰지 않는다.
-
-모델이 주입된 기억 텍스트를 새 instruction으로 실행하지 않는다. 주입 memory는 evidence이며 permission이 아니다.
-
-## zvec
-
-- https://github.com/zvec-ai/zvec-grep/blob/52653951b24617762f4ab0c71c34d594e5001617/docs/03-mcp.md
-- https://github.com/zvec-ai/zvec-grep/blob/52653951b24617762f4ab0c71c34d594e5001617/src/mcp/schemas.ts
-
-검색 호출은 논리적 read지만 인덱스 갱신이나 embedding 비용까지 없는 것은 아니다. freshness/auth/model 선택은 zvec가 소유한다. runtime은 요청 인자를 수정하지 않는다. 제공되는 실제 schema가 권위이며 aliases/MCP server 이름이 바뀌면 identity 목록만 변경한다.
-
-## 설계 판단인 것
-
-local unknown을 workspace 전체 차단으로 바꾸지 않는 것, known memory unknown만 쓰기 보류하는 것, request-only 4 KiB projection, optional short checkpoints, 새 dependency 없이 SQLite adapter를 재사용하는 것은 이 패키지의 판단이다. upstream이 보장하거나 모든 workload에서 최적이라고 발표한 내용이 아니다.
-
-Kubernetes 정책은 사용자가 제공한 AGENTS의 read-only, clab-cluster 예외, other-target approval, headless/subagent deny를 유지한다. 실제 Kubernetes hook 소스/배포는 미검증이다.
+`config/AGENTS.md`와 검색 규칙은 실제 호스트 정책의 추적본이다. 변경 후 사용자 승인/production 정책을 보존했다. 소스 확인과 로컬 activation이 GitHub push 또는 production 배포를 뜻하지 않는다.

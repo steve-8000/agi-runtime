@@ -34,7 +34,11 @@ export function bankPath(agentDir, scope) {
   return join(agentDir, 'memories', BACKEND, scope);
 }
 
-const entries = dir => { try { return readdirSync(dir, { withFileTypes: true }); } catch { return []; } };
+// A missing queue is normal before extraction or during consolidation; unreadable is not empty.
+const entries = dir => {
+  try { return readdirSync(dir, { withFileTypes: true }); }
+  catch (error) { return error.code === 'ENOENT' ? [] : null; }
+};
 
 /**
  * Pending deltas plus the last consolidation error. Never throws: an unreadable bank is
@@ -48,21 +52,29 @@ export function readBank(bank, session) {
   catch (e) { if (e.code !== 'ENOENT') return null; }
   if (state !== null && (typeof state !== 'object' || state.v !== 1)) return null;
   const queue = join(bank, 'queue');
-  const dirs = entries(queue).filter(d => d.isDirectory() && NAME.test(d.name)).map(d => d.name);
+  const queued = entries(queue);
+  if (queued === null) return null;
+  const dirs = queued.filter(d => d.isDirectory() && NAME.test(d.name)).map(d => d.name);
   // The session that is losing context first; its decisions are the ones missing from history.
   dirs.sort((a, b) => (a === session ? -1 : b === session ? 1 : a.localeCompare(b)));
   const pending = [];
   let total = 0, scanned = 0;
   for (const dir of dirs) {
     // File names are `<ts base36>-<rand>.json`, so a lexical sort is chronological.
-    const files = entries(join(queue, dir)).filter(f => f.isFile() && f.name.endsWith('.json')).map(f => f.name).sort();
+    const sessionEntries = entries(join(queue, dir));
+    if (sessionEntries === null) return null;
+    const files = sessionEntries.filter(f => f.isFile() && f.name.endsWith('.json')).map(f => f.name).sort();
     total += files.length;
     for (const file of files) {
       if (scanned >= MAX_DELTA_FILES) break;
       scanned++;
       if (pending.length >= MAX_PENDING) continue;
       let delta;
-      try { delta = JSON.parse(readFileSync(join(queue, dir, file), 'utf8')); } catch { continue; }
+      try { delta = JSON.parse(readFileSync(join(queue, dir, file), 'utf8')); }
+      catch (error) {
+        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) return null;
+        continue; // Removed or malformed delta; actual I/O failures invalidate the observation.
+      }
       if (!delta || delta.v !== 1 || typeof delta.statement !== 'string' || !delta.statement) continue;
       pending.push({ kind: String(delta.kind ?? 'decision'), statement: clipBytes(delta.statement, STATEMENT_BYTES) });
     }

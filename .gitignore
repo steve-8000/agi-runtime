@@ -4,4 +4,5 @@ node_modules/
 .DS_Store
 .zvec-grep/
 .codegraph/
+.serena/
 tmp/

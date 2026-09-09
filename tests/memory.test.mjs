@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture } from './helpers.mjs';
@@ -48,6 +48,23 @@ test('queued deltas are reported with the losing session first and a full total'
   assert.equal(observed.error, null);
 });
 
+test('a permission-denied queue is unobserved until access recovers', {
+  skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'requires unprivileged POSIX file permissions' : false,
+}, t => {
+  const { dir } = bank(t, { deltas: [['mine', '0000000001-aaaa.json', { statement: 'preserve integer cents' }]] });
+  const queue = join(dir, 'queue'), mode = statSync(queue).mode & 0o777;
+  try {
+    chmodSync(queue, 0);
+    assert.throws(() => readdirSync(queue), { code: 'EACCES' });
+    assert.equal(readBank(dir, 'mine'), null, 'unreadable is not an observed empty queue');
+  } finally {
+    chmodSync(queue, mode);
+  }
+  const recovered = readBank(dir, 'mine');
+  assert.equal(recovered.pendingTotal, 1);
+  assert.deepEqual(recovered.pending.map(d => d.statement), ['preserve integer cents']);
+});
+
 test('a malformed delta is skipped without discarding the readable ones', t => {
   const { agentDir, dir } = bank(t, { deltas: [['mine', '0000000002-bbbb.json', { statement: 'kept' }]] });
   writeFileSync(join(dir, 'queue', 'mine', '0000000001-aaaa.json'), '{not json');
@@ -84,7 +101,7 @@ test('another memory backend produces no sharpshooter observation', async t => {
 test('unconsolidated decisions reach the model only on the recovery card', async t => {
   const f = await fixture(t);
   f.rt.decisionMemory = { bank: '/b', pending: [{ kind: 'correction', statement: 'keep JSONL' }], pendingTotal: 1, error: null };
-  assert.equal(JSON.parse(projection(f.rt)).resume, undefined);
+  assert.equal(projection(f.rt), '');
   f.rt.resume = true;
   assert.deepEqual(JSON.parse(projection(f.rt)).resume.pendingDecisions, ['correction: keep JSONL']);
 });
@@ -111,9 +128,4 @@ test('packing drops queued decisions before the rest of the recovery card', asyn
   assert.equal(state.resume.checkpoint.summary, 'built the thing');
 });
 
-test('runtime_status carries the full observation the projection only teases', async t => {
-  const f = await fixture(t);
-  const observed = { bank: '/b', pending: [{ kind: 'constraint', statement: 'x' }], pendingTotal: 9, error: null };
-  f.rt.decisionMemory = observed;
-  assert.deepEqual(f.rt.status().decisionMemory, observed);
-});
+

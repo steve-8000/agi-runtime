@@ -53,3 +53,25 @@ test('an unbalanced managed block is refused instead of corrupting the rc file',
   assert.equal(r.status, 1);
   assert.equal(readFileSync(rc, 'utf8'), broken);
 });
+
+test('live probe preserves a foreign bank reported by the child process',t=>{
+  const f=fixture(t),bin=join(f.dir,'bin'),bank=join(f.agent,'memories','sharpshooter','foreign'),witness=join(f.dir,'child-scratch');
+  mkdirSync(bin);mkdirSync(bank,{recursive:true});
+  const memory=join(bank,'architecture.md'),decision='Keep this unrelated project decision.\n';writeFileSync(memory,decision);
+  // Exercise the actual CLI's finally path with untrusted child metadata, without a model or host memory.
+  writeFileSync(join(bin,'omp'),`#!${process.execPath}
+(async()=>{
+ const {pathToFileURL}=require('node:url'),{writeFileSync}=require('node:fs'),{dirname}=require('node:path');
+ const observer=process.argv[process.argv.indexOf('-e')+1],handlers=new Map();
+ const factory=(await import(pathToFileURL(observer).href)).default;
+ factory({on:(name,fn)=>handlers.set(name,fn),pi:{getAgentDir:()=>${JSON.stringify(f.agent)}},getAllTools:()=>[],getActiveTools:()=>[]});
+ await handlers.get('session_start')({}, {memory:{status:async()=>({backend:'sharpshooter',active:true,scope:'foreign'})}});
+ writeFileSync(${JSON.stringify(witness)},dirname(observer));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+`,{mode:0o755});
+  const result=spawnSync(process.execPath,[join(root,'scripts/live-probe.mjs')],{encoding:'utf8',timeout:30000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`}});
+  assert.equal(result.status,1,'the incomplete fake run must not pass integration');
+  const scratch=readFileSync(witness,'utf8');
+  assert.equal(existsSync(scratch),false,'the probe removes only its own scratch tree');
+  assert.equal(readFileSync(memory,'utf8'),decision,'child-reported bank paths are not deletion authority');
+});

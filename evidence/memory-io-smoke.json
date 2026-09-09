@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "filesystem": "real unprivileged POSIX permissions",
+  "observations": [
+    {
+      "kind": "queue",
+      "denial": "EACCES",
+      "observation": null
+    },
+    {
+      "kind": "session-queue",
+      "denial": "EACCES",
+      "observation": null
+    },
+    {
+      "kind": "delta-file",
+      "denial": "EACCES",
+      "observation": null
+    }
+  ],
+  "recoveredPending": "preserve integer cents",
+  "diagnostics": {
+    "multilineCredentialWithheld": true,
+    "maxUtf8Bytes": 2048,
+    "validUtf8": true
+  }
+}

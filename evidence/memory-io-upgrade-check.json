@@ -1,0 +1,109 @@
+{
+  "status": "PASS",
+  "scope": "runtime package including installer safety",
+  "ompVersion": "omp/18.1.11",
+  "liveProbe": true,
+  "extensionLink": "/Users/steve/orca/workspaces/omp-agi-runtime/scallop",
+  "probe": {
+    "status": "PASS",
+    "model": "openai-codex/gpt-6-astra",
+    "runtimeVersion": "0.5.0",
+    "scope": "real host OMP/config/credentials; scratch source/session/journal; native memory may create a scratch-scope host bank; no production workload or cluster changes",
+    "durationMs": 93087,
+    "checks": {
+      "processExited": true,
+      "attached": true,
+      "sharpshooter": true,
+      "oneIntelligenceTool": true,
+      "oneIndexLifecycle": true,
+      "nativeMultiTurn": true,
+      "intelligenceBackends": true,
+      "intelligenceReadOnly": true,
+      "nativeVerification": true,
+      "repairedBehavior": true,
+      "verifierUnchanged": true,
+      "runtimeHealthy": true
+    },
+    "modelTurns": 14,
+    "operations": [
+      "search",
+      "architecture",
+      "references"
+    ],
+    "toolNames": [
+      "read",
+      "todo",
+      "mcp__lazy_intel_code_intel",
+      "bash",
+      "edit",
+      "runtime_status"
+    ],
+    "memory": {
+      "backend": "sharpshooter",
+      "active": true,
+      "scope": "workspace-2zpnrwx7bz3ih"
+    },
+    "runtimeStatus": {
+      "health": "healthy",
+      "version": "0.5.0",
+      "totalUnknown": 0
+    },
+    "fixtureBeforeExit": 1,
+    "fixtureAfterExit": 0,
+    "processExit": 0,
+    "processError": null,
+    "stderr": ""
+  },
+  "steps": [
+    {
+      "name": "omp-version",
+      "command": "omp --version",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 228,
+      "error": null,
+      "stdoutTail": "omp/18.1.11",
+      "stderrTail": ""
+    },
+    {
+      "name": "runtime-static-check",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/check.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 560,
+      "error": null,
+      "stdoutTail": "{\"check\":\"syntax-and-config\",\"files\":17,\"status\":\"passed\",\"scope\":\"JavaScript parser and runtime options; not an OMP SDK build or live tool integration\"}",
+      "stderrTail": ""
+    },
+    {
+      "name": "runtime-regressions",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node --test --test-reporter=tap tests/runtime.test.mjs tests/extension.test.mjs tests/memory.test.mjs tests/install.test.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 1150,
+      "error": null,
+      "stdoutTail": "  duration_ms: 2.882584\n  type: 'test'\n  ...\n1..53\n# tests 53\n# suites 0\n# pass 53\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1113.789125",
+      "stderrTail": ""
+    },
+    {
+      "name": "extension-link",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/install.mjs",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 33,
+      "error": null,
+      "stdoutTail": "  \"current\": \"/Users/steve/orca/workspaces/omp-agi-runtime/scallop\",\n  \"runtimeDir\": \"/Users/steve/.omp/runtime\",\n  \"changed\": false,\n  \"preserved\": [\n    \"OMP config.yml\",\n    \"AGENTS.md\",\n    \"Kubernetes approval hook\",\n    \"MCP credentials\",\n    \"journal data\"\n  ],\n  \"note\": \"Restart the OMP process to load a different extension version. No running process was altered.\"\n}",
+      "stderrTail": ""
+    },
+    {
+      "name": "live-autonomy",
+      "command": "/opt/homebrew/Cellar/node/26.7.0/bin/node scripts/live-probe.mjs --model openai-codex/gpt-6-astra",
+      "ok": true,
+      "exitCode": 0,
+      "durationMs": 93178,
+      "error": null,
+      "stdoutTail": "  },\n  \"runtimeStatus\": {\n    \"health\": \"healthy\",\n    \"version\": \"0.5.0\",\n    \"totalUnknown\": 0\n  },\n  \"fixtureBeforeExit\": 1,\n  \"fixtureAfterExit\": 0,\n  \"processExit\": 0,\n  \"processError\": null,\n  \"stderr\": \"\"\n}",
+      "stderrTail": ""
+    }
+  ]
+}
