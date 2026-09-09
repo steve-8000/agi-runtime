@@ -3,8 +3,7 @@ import { check, digest, rejectObviousSecrets } from './util.mjs';
 export const VERSION = '0.5.0';
 export const STATE_TYPE = 'clab.runtime.state.v3';
 export const OLD_STATE_TYPES = new Set([STATE_TYPE, 'agi-runtime-state']);
-// Intelligence maintains derived indexes, not user source or canonical memory.
-// Keep the mounted identity read-only even with an older operator config.
+// Explicit maintenance mutates derived state, never user source or canonical memory.
 export const INTELLIGENCE_TOOL = 'mcp__lazy_intel_code_intel';
 const EMPTY_CONFIG = Object.freeze({});
 export const READ = new Set(['read', 'grep', 'glob', 'ast_grep', 'web_search', 'runtime_status', 'runtime_evidence', INTELLIGENCE_TOOL]);
@@ -37,11 +36,13 @@ export function effectiveCall(call) {
 }
 export function classify(call) {
   const e = effectiveCall(call);
+  if (e.tool === INTELLIGENCE_TOOL && ['sync', 'reindex', 'repair'].includes(e.input.operation))
+    return { ...e, kind: 'derived-effect', scope: 'derived' };
   if (READ.has(e.tool)) return { ...e, kind: 'read', scope: 'read' };
   if (CONTROL.has(e.tool)) return { ...e, kind: 'control', scope: 'control' };
   return { ...e, kind: 'workspace-write', scope: 'workspace' };
 }
-export const isEffect = op => op.scope === 'workspace';
+export const isEffect = op => op.scope === 'workspace' || op.scope === 'derived';
 export const logicalId = (session, call, op) => digest({ session, call: call.toolCallId, tool: op.tool });
 export const wireId = call => `${call.toolCallId}\0${call.toolName}`;
 export function observation(result, isError) {

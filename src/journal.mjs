@@ -109,7 +109,7 @@ export class Journal {
       check(rows.length > 0 && rows.every(r => r?.workspace === lease.workspace && r.state === 'unknown'), 'ACTION_STATE_CONFLICT');
       // Preserve old observations without pretending local reads certify a retired external service.
       const unknown = new Map(this.unknown(lease.workspace).map(a => [a.id,a]));
-      check(rows.every(r => unknown.get(r.id)?.scope === 'workspace'), 'RETIRED_ACTION_SCOPE');
+      check(rows.every(r => ['workspace', 'derived'].includes(unknown.get(r.id)?.scope)), 'RETIRED_ACTION_SCOPE');
       const reads = readbackIds.map(id => this.row(id));
       for (const row of rows) {
         check(reads.some(r => r?.workspace === lease.workspace && r.is_effect === 0 && r.state === 'succeeded' && r.created >= row.updated && r.serial > row.serial), 'READBACK_REFERENCE_REQUIRED');

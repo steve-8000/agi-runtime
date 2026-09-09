@@ -50,7 +50,7 @@ OMP public events
 
 JavaScript의 cross-file LSP 분석에는 프로젝트 범위가 필요하다. 이 저장소의 `jsconfig.json`은 `.mjs` 소스·확장·스크립트·테스트를 포함한다. 추가 전 `config` 참조 조회가 `{}`였고, 추가 후 실제 Serena 응답에 네 파일의 호출부가 나타났다. 빈 의미 검색 결과를 완전성 증거로 취급하지 않는다.
 
-`mcp__lazy_intel_code_intel`은 runtime 관측상 읽기다. `write(xd://...)` envelope도 실제 tool identity로 분류한다. 파생 인덱스 I/O가 전혀 없다는 뜻은 아니며 OMP의 승인 정책을 override하지 않는다. 도구 입력의 root/query/freshness/범위를 runtime이 재작성하지 않는다.
+`mcp__lazy_intel_code_intel`의 조회와 `status`는 runtime 관측상 읽기다. 명시적 `sync`·`reindex`·`repair`는 `derived-effect`/`derived` scope이며 기존 effect journal·pause·unknown/read-back 경로로 관측한다. `write(xd://...)` envelope도 실제 tool identity와 operation으로 분류한다. 파생 인덱스 I/O가 전혀 없다는 뜻은 아니며 OMP의 승인 정책을 override하지 않는다. 도구 입력의 root/query/freshness/범위를 runtime이 재작성하지 않는다.
 
 ## 사람 없이 이어지는 실행
 
@@ -68,7 +68,7 @@ runtime에는 `session_stop` 재촉, `sendMessage`, `triggerTurn`, 강제 도구
 
 ## journal과 복구
 
-`src/contracts.mjs`가 identity와 outcome을 분류하고, `src/kernel.mjs`가 이벤트를 연결하며, `src/journal.mjs`가 관측을 저장한다. 같은 `toolCallId`의 xd envelope와 실제 child는 logical action 하나다. `code_intel` read 분류는 고정 identity다. 임의 native 도구를 read로 바꿔 pause를 우회할 수 있던 `searchTools` 설정 경로는 제거했으며 현재 runtime config는 `{}`다. 다른 ID의 같은 입력은 합치지 않는다.
+`src/contracts.mjs`가 identity와 outcome을 분류하고, `src/kernel.mjs`가 이벤트를 연결하며, `src/journal.mjs`가 관측을 저장한다. 같은 `toolCallId`의 xd envelope와 실제 child는 logical action 하나다. `code_intel` 분류는 고정 tool identity와 명시적 operation을 함께 사용한다. 조회 중의 자동 freshness 갱신은 조회에 포함하며, 별도 maintenance 요청만 derived effect로 분리한다. 임의 native 도구를 read로 바꿔 pause를 우회할 수 있던 `searchTools` 설정 경로는 제거했으며 현재 runtime config는 `{}`다. 다른 ID의 같은 입력은 합치지 않는다.
 
 오류 관측은 뒤의 성공 응답으로 지우지 않는다. start를 보았으면 end 전까지 완료로 확정하지 않는다. input drift, process/lease 상실, 마지막 persistence 실패는 불명 상태로 남길 수 있다. 실패한 명령이 외부 부작용을 남기지 않았다는 주장은 하지 않는다.
 

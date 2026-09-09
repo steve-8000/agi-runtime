@@ -1,0 +1,53 @@
+{
+  "status": "PASS",
+  "model": "OMP main default",
+  "runtimeVersion": "0.5.0",
+  "scope": "real host OMP/config/credentials; scratch source/session/journal; native memory may create a scratch-scope host bank; no production workload or cluster changes",
+  "durationMs": 325294,
+  "checks": {
+    "processExited": true,
+    "attached": true,
+    "sharpshooter": true,
+    "oneIntelligenceTool": true,
+    "oneIndexLifecycle": true,
+    "nativeMultiTurn": true,
+    "intelligenceBackends": true,
+    "intelligenceReadOnly": true,
+    "nativeVerification": true,
+    "repairedBehavior": true,
+    "verifierUnchanged": true,
+    "runtimeHealthy": true
+  },
+  "modelTurns": 13,
+  "operations": [
+    "search",
+    "architecture",
+    "references"
+  ],
+  "toolNames": [
+    "todo",
+    "read",
+    "mcp__lazy_intel_code_intel",
+    "bash",
+    "edit",
+    "task",
+    "glob",
+    "yield",
+    "runtime_status"
+  ],
+  "memory": {
+    "backend": "sharpshooter",
+    "active": true,
+    "scope": "workspace-bjk1pjbxsxt7"
+  },
+  "runtimeStatus": {
+    "health": "healthy",
+    "version": "0.5.0",
+    "totalUnknown": 0
+  },
+  "fixtureBeforeExit": 1,
+  "fixtureAfterExit": 0,
+  "processExit": 0,
+  "processError": null,
+  "stderr": ""
+}

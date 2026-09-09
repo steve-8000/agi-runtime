@@ -4,17 +4,10 @@
     "node_repl",
     "computer-use",
     "codegraph",
-    "zvec-grep"
+    "zvec-grep",
+    "serena"
   ],
   "mcpServers": {
-    "zvec-grep": {
-      "type": "stdio",
-      "command": "/opt/homebrew/bin/zg",
-      "args": [
-        "server",
-        "--stdio"
-      ]
-    },
     "lazy-ios": {
       "type": "stdio",
       "command": "bun",
@@ -38,7 +31,7 @@
         "/Users/steve/lazy-project/lazy-intel/src/cli.js",
         "serve"
       ],
-      "timeout": 120000,
+      "timeout": 1920000,
       "env": {
         "LAZY_INTEL_TIMEOUT_MS": "30000",
         "LAZY_INTEL_INDEX_TIMEOUT_MS": "600000",
@@ -48,7 +41,9 @@
         "LAZY_INTEL_ZVEC_MODE": "auto",
         "LAZY_INTEL_SERENA_CONTEXT": "agent",
         "SERENA_USAGE_REPORTING": "false",
-        "DO_NOT_TRACK": "1"
+        "DO_NOT_TRACK": "1",
+        "LAZY_INTEL_SERENA_BIN": "/Users/steve/.local/share/uv/tools/serena-agent/bin/serena",
+        "LAZY_INTEL_ALLOWED_ROOTS": "/Users/steve/oh-my-pi:/Users/steve/omp-agi-runtime:/Users/steve/lazy-project/lazy-intel"
       }
     }
   }

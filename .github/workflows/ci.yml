@@ -1,0 +1,42 @@
+name: Runtime integration
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  runtime-contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22.22.3', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm run check
+      - run: node --test tests/runtime.test.mjs tests/extension.test.mjs tests/install.test.mjs
+  pinned-omp:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/checkout@v4
+        with:
+          repository: steve-8000/oh-my-pi
+          ref: 961df03e72b7cc457f7023adbba807387c6c0a67
+          path: omp-source
+      - run: bun install --frozen-lockfile
+        working-directory: omp-source
+      - name: Check the pinned native OMP extension API
+        run: node scripts/check-omp-contract.mjs omp-source

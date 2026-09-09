@@ -1,14 +1,14 @@
 {
   "date": "2026-09-09",
   "packageVersion": "0.5.0",
-  "delivery": "active host extension checkout; OMP owns main model selection and execution; local changes not pushed",
+  "delivery": "source-pinned local integration; OMP owns main model selection and execution",
   "sources": {
     "runtimeBaseline": "4d50040 Replace gbrain memory wiring with Sharpshooter bank observation",
-    "omp": "can1357/oh-my-pi@v18.1.11; /opt/homebrew/Cellar/omp/18.1.11/bin/omp",
-    "lazyIntel": "dff2e3e69560adf4333d3d33c76868c765e6a417; /Users/steve/lazy-project/lazy-intel; version 0.2.0",
+    "omp": "steve-8000/oh-my-pi@961df03e72b7cc457f7023adbba807387c6c0a67; v18.1.11 with stdio cancellation; /Users/steve/oh-my-pi/packages/coding-agent/dist/omp",
+    "lazyIntel": "485e0af586bf55a1ceb8e0b0859d866ccee81430; /Users/steve/lazy-project/lazy-intel; version 0.2.0",
     "zvec": "@zvec/zvec-grep@0.2.1 through lazy-intel",
     "codegraph": "@colbymchenry/codegraph@1.6.0 through lazy-intel",
-    "serena": "installed Serena MCP selected by lazy-intel; version not pinned by this repository",
+    "serena": "serena-agent@1.7.0; canonical absolute executable selected by lazy-intel",
     "sharpshooter": "OMP v18.1.11 native backend; current host memory.backend=sharpshooter"
   },
   "decisions": {

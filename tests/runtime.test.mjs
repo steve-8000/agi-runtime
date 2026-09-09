@@ -56,6 +56,33 @@ test('code_intel stays a read through xd envelopes even with a legacy operator c
   assert.equal(f.journal.db.prepare('SELECT COUNT(*) n FROM actions').get().n,1);
 });
 
+test('explicit intelligence maintenance is paused and journaled as a derived effect',async t=>{
+  const f=await fixture(t);
+  for(const operation of ['sync','reindex','repair']) {
+    const input={root:f.root,operation,backend:'codegraph'};
+    const outer=call(operation,'write',{path:`xd://${INTELLIGENCE_TOOL}`,content:JSON.stringify(input)});
+    const inner=call(operation,INTELLIGENCE_TOOL,input);
+    f.rt.pause(true);
+    assert.equal(f.rt.intent(outer)?.block,true);
+    assert.equal(f.rt.intent(inner)?.block,true);
+    f.rt.pause(false);
+    f.rt.intent(outer);f.rt.start(outer);f.rt.intent(inner);f.rt.result(inner,ok,false);f.rt.result(outer,ok,false,'end');
+    assert.equal(row(f,outer).is_effect,1);assert.equal(row(f,outer).state,'succeeded');
+  }
+  assert.equal(f.journal.session('session').effects_used,3,'envelope and child are one effect');
+  assert.ok(f.journal.events(f.ws,'action.started').every(e=>e.payload.scope==='derived'));
+});
+
+test('uncertain intelligence maintenance can be reconciled after a later status read',async t=>{
+  const f=await fixture(t), c=call('repair',INTELLIGENCE_TOOL,{operation:'repair',root:f.root});
+  f.rt.intent(c);f.rt.start({...c,input:{...c.input,backend:'codegraph'}});f.rt.result(c,ok,false,'end');
+  assert.equal(f.rt.status().unknown[0].scope,'derived');
+  const status=call('status',INTELLIGENCE_TOOL,{operation:'status',root:f.root});
+  f.advance(1);run(f.rt,status);
+  const result=f.rt.reconcile({actionIds:[row(f,c).id],readbackIds:[row(f,status).id],observed:'Derived index status read back; no replay or external proof.'});
+  assert.equal(result.notAnExternalProof,true);assert.equal(row(f,c).state,'reconciled');
+});
+
 test('failed code intelligence is a failed read and never locks native source work',async t=>{
   const f=await fixture(t), c=call('intel',INTELLIGENCE_TOOL,{operation:'search',query:'x'});
   run(f.rt,c,ok,true); assert.equal(row(f,c).state,'failed');

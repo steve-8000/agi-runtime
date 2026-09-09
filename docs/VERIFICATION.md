@@ -2,6 +2,19 @@
 
 환경: macOS arm64, Node v26.7.0, Homebrew OMP 18.1.11. 이 기록은 실제 이 checkout·호스트에서 실행한 결과다. 구형 65-test/한 단어 attach 증거를 현재 버전의 결과로 재사용하지 않는다.
 
+## 2026-09-09 통합 보강 검증
+
+- OMP 18.1.11 기반 stdio cancellation 패치: transport 테스트 46개 통과, TypeScript check 통과, 바이너리 build 및 실제 CLI 실행 성공.
+- Runtime: runtime/extension 38개, installer 7개 통과. 명시적 intelligence maintenance의 derived effect 분류, pause, envelope 중복 방지, unknown/read-back을 검증했다.
+- lazy-intel: 실행 파일·canonical root·watcher 상한·atomic installer·취소·partial repair 실패 회귀를 실행했고 관측된 실패를 수정했다. 실제 zvec-grep 0.2.1, CodeGraph 1.6.0, Serena 1.7.0에서 search/architecture/impact/references/symbol 모두 PASS.
+- `scripts/check-omp-contract.mjs`의 실제 OMP SDK type compatibility와 양쪽 GitHub Actions workflow의 actionlint 검증 통과. 원격 scheduled job 실행 결과와는 구분한다.
+- `evidence/live-integrated.json`: 실제 OMP 기본 모델 **13턴 / 325.294초 / PASS**. Sharpshooter 활성, intelligence tool 하나, verifier 불변, 소스 수정 후 verifier 성공, runtime healthy/unknown 0.
+- 동시 4세션·400회 synthetic derived-effect hook cycle: 기록 400회, degrade 0, p95 0.864ms. 별도 강제 lock은 136.203ms 뒤 observer degrade를 확인했다. 정상 read hook 1,000회 median 0.294ms / p95 0.560ms, steady context 0 bytes. `busy_timeout=100ms`를 유지한다.
+- 두 파일 scratch의 최초 search 7,236ms, MCP 재시작 후 최초 2,556ms, warm 1,797ms. 단일 표본이며 기존 재시작 reconciliation 정책을 유지한다.
+- 최종 reviewer pass는 사용자의 우선 커밋·푸시 요청으로 중단됐다. 완료된 리뷰로 주장하지 않는다.
+
+아래는 이전 0.5 검증 이력이다.
+
 ## Deterministic checks
 
 | 실행 | 결과 | 범위 |

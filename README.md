@@ -18,7 +18,7 @@ OMP
 ## 0.5 변경
 
 - 실제 활성 0.4 Sharpshooter 구현을 기준으로 통합했다. 기억을 다시 구현하지 않는다.
-- `code_intel`과 xd envelope를 읽기로 관측한다. 외부 memory MCP 쓰기/ack/gate 경로와 임의 도구를 read로 승격시키던 `searchTools` override를 제거했다.
+- `code_intel`과 xd envelope의 조회는 read, 명시적 `sync`·`reindex`·`repair`는 `derived-effect`로 관측한다. 파생 상태 변경은 source/memory 쓰기가 아니지만 journal·pause·unknown/read-back에 포함한다. 외부 memory MCP 쓰기/ack/gate 경로와 임의 도구를 read로 승격시키던 `searchTools` override를 제거했다.
 - 독립 `zvec-autoindex.ts`를 로딩 경로 밖으로 이동했다. 파생 인덱스는 lazy-intel만 관리한다.
 - 평상시 runtime projection은 **0 bytes / 추가 메시지 0개**다. unknown/degraded/pause/resume 때만 복구 상태를 제공한다.
 - compaction이 최신 Sharpshooter bank sample을 기다리도록 했다. 통합된 기억은 중복 주입하지 않는다.
@@ -52,6 +52,10 @@ node scripts/install.mjs --rollback  # 직전 extension target으로 복구
 이 호스트의 symlink는 현재 이 checkout을 가리킨다. 새 OMP 프로세스에 적용되며 이미 로드된 세션 객체를 hot-patch하지 않는다. `--activate`는 사용자 AGENTS·MCP credentials·승인 설정·journal을 덮어쓰지 않는다. [MIGRATION.md](docs/MIGRATION.md)의 호스트 설정 병합과 이전 target 복구 범위를 구분한다.
 
 `ompupdate` 설치기는 기존 zsh managed block만 갱신한다. native `omp update` 성공 후 runtime gate를 실행한다. 업데이트 자체를 이 extension이 재구현하거나 자동 rollback하지 않는다.
+
+## Pause와 안전 경계
+
+`/runtime pause`는 **runtime advisory pause**다. 로드된 runtime과 읽을 수 있는 journal 안에서는 명시적 effect를 중단하지만, journal을 읽지 못한 새 프로세스에서 이전 pause를 복원한다고 보장하지 않는다. 관측 장애는 일반 개발을 막지 않는다. OMP의 native approval, Kubernetes 승인 hook, 사용자 stop이 안전 경계를 소유한다. runtime을 production interlock이나 권한 부여자로 사용하지 않는다.
 
 ## 구조와 한계
 
