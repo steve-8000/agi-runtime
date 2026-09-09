@@ -3,4 +3,5 @@ node_modules/
 *.tmp
 .DS_Store
 .zvec-grep/
+.codegraph/
 tmp/
