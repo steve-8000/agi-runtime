@@ -1,25 +1,14 @@
 ---
-description: Use for repository changes that require implementation, build, tests, and repair.
+description: Select verification scope and independent review for implementation changes.
 agents: [main]
 ---
 
-Use a code-first implementation loop:
+# Implementation and verification
 
-1. Inspect enough to locate the existing path and define acceptance criteria.
-2. Implement the coherent requested slice before broad verification.
-3. Run the narrow affected build or tests.
-4. Fix observed failures and regressions.
-5. Repair until the affected area passes.
-6. Request one reviewer pass after the diff is coherent.
+Work from current evidence and acceptance criteria. Implement the smallest coherent change, run relevant checks, and repair failures caused by that change. Ordinary recoverable failures are not handoff points. Do not alter unrelated failures or weaken valid tests to obtain green output.
 
-Do not substitute planning, proof seeking, or repeated review for implementation. Repeat verification only after a relevant change, a real failure, or a reviewer finding that can alter correctness.
+Start with affected tests/build targets. Expand to shared-contract or project-wide checks when cross-cutting behavior, release readiness, regression evidence or an explicit CI requirement makes that coverage necessary. Neither a full suite for every edit nor a blanket full-suite ban is appropriate. Use existing selectors; do not redesign a test harness solely to satisfy a scope ritual.
 
-## Test scope is the changed area only
+Use one independent read-only review for material security/trust, persistence/data-integrity, concurrency, public-contract or cross-component changes. Trivial corrections and mechanical changes do not require a reviewer. Re-review affected parts after material fixes or redesign, not after every edit. When independent review is unavailable, complete safe work and report the missing review rather than impersonating it.
 
-Every verification run targets the area under change and nothing else. Create or extend a test target, suite, or harness step that belongs to that area, and run that alone.
-
-- Never run the whole suite, every package, or an unfiltered harness as routine verification. That is prohibited, not merely discouraged, including at the end of a slice.
-- If a runner or harness has no way to select one area, add the selector as part of the work: a target argument, a suite name, a step list, a size cap. Then use it.
-- New tests belong to the area's own target or suite. Do not append them to a shared catch-all target that forces unrelated tests to run with them.
-- A full-suite run is not part of this loop.
-- Report which scope was run. Never describe a narrow run as if it covered the project.
+Repeat passing checks only after a relevant change, failure or new finding. Describe the coverage actually run and any blockers. Paid live probes, host configuration changes and production access are not disposable local tests and retain their existing authorization boundaries.

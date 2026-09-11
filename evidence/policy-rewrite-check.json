@@ -1,0 +1,119 @@
+{
+  "scope": "static policy/document audit only",
+  "base_commit": "da7a671c63dbf62c672a4189a0001a4716866c47",
+  "checked_at": "2026-09-12",
+  "environment": {
+    "os": "Linux",
+    "python": "3.13.5"
+  },
+  "checks": {
+    "markdown_files": 12,
+    "local_links_resolve_against_staged_files_and_base_inventory": 41,
+    "rule_uri_references_resolve": 4,
+    "valid_rule_frontmatters": 3,
+    "json_examples_match_recorded_schema_and_documented_required_inputs": 5,
+    "utf8_newlines_and_fence_balance": "passed",
+    "staged_scope_excludes_runtime_code_and_active_host_configuration": "passed"
+  },
+  "agents_md_bytes": {
+    "before": 10144,
+    "after": 4426,
+    "reduction_percent": 56.37
+  },
+  "size_note": "File bytes, not tokenizer measurements or total live prompt size.",
+  "rules": {
+    "config/rules/design-routing.md": {
+      "description_bytes": 82,
+      "agents": [
+        "main"
+      ]
+    },
+    "config/rules/implementation-loop.md": {
+      "description_bytes": 76,
+      "agents": [
+        "main"
+      ]
+    },
+    "config/rules/search-routing.md": {
+      "description_bytes": 87,
+      "agents": [
+        "main",
+        "scout",
+        "reviewer",
+        "advisor"
+      ]
+    }
+  },
+  "manual_review": "Ownership, required intelligence routing, fallback, review/test scope, safety and migration consistency reviewed by the author; no independent reviewer claimed.",
+  "unchanged_by_this_patch": [
+    "src/",
+    "extension/",
+    "scripts/",
+    "tests/",
+    ".github/",
+    "config/mcp.json",
+    "config/runtime.json",
+    "package.json",
+    "source-pins.json",
+    "docs/VERIFICATION.md",
+    "existing evidence/ files"
+  ],
+  "not_run": [
+    "OMP/lazy-intel live routing scenarios",
+    "native OMP rule loader",
+    "host activation or policy installation",
+    "local runtime test suite",
+    "full baseline SHA256SUMS validation"
+  ],
+  "manifest_scope": "Update digests for staged files only; preserve other baseline entries without asserting their completeness or correctness.",
+  "files": {
+    "AGENTS.md": {
+      "bytes": 685,
+      "sha256": "380d31b2d3fb3cac75f404262eb5e3f8bf38b173e5e228a8fed5e63ac3e5f411"
+    },
+    "README.md": {
+      "bytes": 5104,
+      "sha256": "d9063773a57682b8af2dd436db3656e8120ffc3fcbfd8d7de690e7d5ba7a08e4"
+    },
+    "config/AGENTS.md": {
+      "bytes": 4426,
+      "sha256": "0757be14798c844de6b89d81ee288f46ef25c13f50efadde1ede61dafafd4c53"
+    },
+    "config/AGENTS.runtime.md": {
+      "bytes": 480,
+      "sha256": "fbb131a6596f3868338fe2a220fc52a28f8dcd9bf4fe89fcdc30fd64a47b9e3b"
+    },
+    "config/rules/design-routing.md": {
+      "bytes": 1074,
+      "sha256": "e923998dbef2b6458acd35e279697ec506e967d3e65ca3a1afb9306863213e49"
+    },
+    "config/rules/implementation-loop.md": {
+      "bytes": 1529,
+      "sha256": "4afa70513211f9838a505a07e1966d065babc4ab32e33d9400e3ccb106cbbf5f"
+    },
+    "config/rules/search-routing.md": {
+      "bytes": 2987,
+      "sha256": "4816c247d5cdb558e2f68c5be98e8a12a36ee0482164324328a51aec4cd28697"
+    },
+    "docs/ARCHITECTURE.md": {
+      "bytes": 6130,
+      "sha256": "77fb608093547cf50403a18b21c8fa97b2e77acb56aee48e2330e2f57d551c83"
+    },
+    "docs/IMPLEMENTATION-WORKORDER.md": {
+      "bytes": 2333,
+      "sha256": "fcad9b14914a206444ef7d05cc6463d7396a1b7ac7873cddb64fe50ceaead3cc"
+    },
+    "docs/MIGRATION.md": {
+      "bytes": 5718,
+      "sha256": "8b0ed87a1524f1402d93c49890cfcc437f250c8e67e723641f39c94233e6c19b"
+    },
+    "docs/POLICY-VALIDATION.md": {
+      "bytes": 5569,
+      "sha256": "0472b82de5c111bc2698464dcaca7c1dd6be3db6c4b9b5d4885125071605d3fc"
+    },
+    "docs/SOURCE-AUDIT.md": {
+      "bytes": 3488,
+      "sha256": "ac1fc1e4180dd347cea99385826e5fc6526b920e6e69e15dc4e657b76a5c81e6"
+    }
+  }
+}

@@ -1,15 +1,33 @@
 ---
-description: Choose native exact search or lazy-intel code intelligence without duplicating work.
-agents: [main, scout, reviewer]
+description: Route semantic discovery, cross-file impact and live code semantics through lazy-intel.
+agents: [main, scout, reviewer, advisor]
 ---
 
-# Search routing
+# Code intelligence routing
 
-- Known identifier, path, literal, error, regex or exhaustive occurrence: native `glob`, `grep`, AST or live LSP semantics. Exact enumeration is authoritative for completeness.
-- Unknown wording/location, behavior, architecture, dependencies, call flow, impact or cross-file synthesis: `code_intel` through the single lazy-intel MCP first. Preserve the user's concepts and constraints; choose the explicit operation.
-- `search` uses zvec-grep; `architecture`/`impact` use CodeGraph; `symbol`/`references`/`implementations`/`diagnostics` use Serena. `auto` is only for a genuinely unclear query class, not a default fan-out ritual.
-- `references` and `implementations` need `symbol` and `relativePath`; `diagnostics` needs `relativePath` and a focused `query` or `symbol` under lazy-intel 0.2's input validation. JavaScript cross-file references require an appropriate `jsconfig.json`/`tsconfig.json`. Empty or partial semantic results do not prove absence; use native exact search when completeness matters.
-- Lazy-intel owns derived index creation, watchers, refresh and repair. Use default `freshness=auto`; request recovery controls only after a reported degraded backend. Never call standalone zvec-grep, CodeGraph or Serena MCPs, run manual index commands, or add a second autoindex extension. Preserve the shared embedding configuration.
-- A sufficient current-source snippet is already-read evidence. Read more only for missing implementation detail, exact/exhaustive confirmation or changed source. If lazy-intel is unavailable, immediately continue with native tools; no user setup ritual or repeated near-identical searches.
-- Stop searching when the evidence is sufficient. Neither retrieval relevance nor graph/LSP output overrides current source and actual build/test results.
-- Sharpshooter is the sole durable memory owner. It injects project decisions automatically; zvec indexes source workspaces, not memory banks. Do not call unavailable memory verbs or index private OMP state.
+The first relevant discovery call for a semantic or cross-component question is `code_intel`, even when the request names one file. Preserve the user's behavior, relationships and constraints in the query; guessed filenames are supplementary anchors. A current, sufficient earlier result satisfies this requirement.
+
+| Need | Route |
+|---|---|
+| Known path, literal, identifier, regex or exhaustive occurrences | Native exact search |
+| Unknown location/wording, behavior or rationale grounded in code | `search` |
+| Architecture, dependencies, lifecycle or data/control flow | `architecture` |
+| Blast radius of a symbol/contract change | `impact` |
+| Live definition or symbol details | `symbol` |
+| Callers/usages or concrete implementations | `references` / `implementations` |
+| Focused live file diagnostics | `diagnostics` |
+| Genuinely ambiguous intelligence question | `auto` |
+
+For a shared contract change, use the applicable impact/reference operation before editing; do not run every row as a checklist. Graph/LSP results do not establish historical intent or exhaustive coverage by themselves: check current source, exact occurrences, tests or Git history as the question requires.
+
+## Inputs and evidence
+
+Always set `root` to the actual project's canonical absolute path, not the MCP process directory. Use the registered schema and server validation as the current input contract; no schema/status preflight is required for ordinary calls. `impact` needs `symbol`; `references`/`implementations` need `symbol` and `relativePath`; `diagnostics` needs `relativePath` and, with the currently documented server validation, a focused `query` or `symbol`.
+
+Keep `freshness=auto`; use `strict` only for a concrete freshness concern. Do not pass `embedding` for an ordinary query. A bounded, current source snippet is already-read evidence. Open more source only for missing detail, freshness or completeness. Empty references are not proof of no callers; inspect project configuration such as jsconfig/tsconfig and use exact search to check coverage.
+
+## Failure and recovery
+
+A missing/degraded capability, unsupported language or demonstrably insufficient result permits focused native fallback, with material limitations reported. Do not silently replace working semantic discovery with broad grep or repeated file opening. Do not repeat nearly identical queries without new evidence.
+
+Use `status`, `sync`, `reindex` or `repair` only for an observed index/backend problem or an explicit maintenance request, through `code_intel`. Do not run standalone backend MCPs, manual index CLIs or another auto-index extension. Keep successful backends usable during partial failure. Authorization failures are not permission to change allowed roots. Never index private OMP state or Sharpshooter banks.
